@@ -33,6 +33,7 @@ import { PageAnime } from './page/channel/anime';
 import { PageMovie } from './page/channel/movie';
 import { PageTv } from './page/channel/tv';
 import { PageDocumentary } from './page/channel/documentary';
+import { PageChannel } from './page/channel/channel';
 import { loginExit } from './page/logout';
 
 document.domain = 'bilibili.com';
@@ -109,10 +110,9 @@ user.addCallback(status => {
             if (/\/documentary\/?$/.test(location.pathname)) {
                 new PageDocumentary();
             }
-            // 二级分区实在太多，难以一一适配
-            // if (/\/v\/(douga|music|dance|game|knowledge|tech|life|kichiku|fashion|information|ent|cinephile)\/?$/.test(location.pathname)) {
-            //     new PageChannel();
-            // }
+            if (/\/c\/(douga|music|dance|game|knowledge|tech|life|kichiku|fashion|information|ent|cinephile)\/?$/.test(location.pathname)) {
+                new PageChannel();
+            }
         }
     }
     player.nanoPermit();
