@@ -2,6 +2,7 @@ import { GM as _ } from '@jsc/chrome';
 import { BLOD } from './core/bilibili-old';
 import { user } from './core/user';
 import { localStorage } from "./core/storage";
+import { cleanup } from './core/cleanup';
 import { Header } from './page/header';
 import { PageSpace } from './page/space';
 import { PageMedia } from './page/media';
@@ -36,10 +37,10 @@ import { PageDocumentary } from './page/channel/documentary';
 import { PageChannel } from './page/channel/channel';
 import { loginExit } from './page/logout';
 
-document.domain = 'bilibili.com';
+try { document.domain = 'bilibili.com'; } catch { }
 
 // 提取版本哈希（仅限用户脚本）
-BLOD.version = GM.info?.script.version.slice(-40);
+BLOD.version = GM.info?.script?.version?.slice(-40);
 // 获取用户数据后初始化
 user.addCallback(status => {
     toast.update(status.toast);
@@ -129,6 +130,8 @@ user.addCallback(status => {
         configurable: true,
     });
     window.top === window.self && (BLOD.ui = new UI());
+    // 在所有页面初始化完成后启动清理管理器
+    cleanup.start();
 });
 // 无需用户数据或者自行获取用户数据的组件初始化
 try {

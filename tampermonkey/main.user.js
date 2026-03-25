@@ -7895,16 +7895,16 @@ const MODULES = `
     danmaku = [];
     /** 获取新版弹幕 */
     async getData() {
-      var _a3, _b2;
+      var _a3, _b3;
       if (!this.danmaku.length) {
         const dmWebView = await this.DmWebViewReply();
         const pageSize = dmWebView.dmSge.pageSize ? dmWebView.dmSge.pageSize / 1e3 : 360;
-        const total = this.aid == window.aid && ((_b2 = (_a3 = window.player) == null ? void 0 : _a3.getDuration) == null ? void 0 : _b2.call(_a3)) / pageSize + 1 || dmWebView.dmSge.total;
+        const total = this.aid == window.aid && ((_b3 = (_a3 = window.player) == null ? void 0 : _a3.getDuration) == null ? void 0 : _b3.call(_a3)) / pageSize + 1 || dmWebView.dmSge.total;
         const promises = [];
         for (let i = 1; i <= total; i++) {
           promises.push(
             this.DmSegMobileReply(i).then((d) => {
-              d.elems && (this.danmaku = this.danmaku.concat(d.elems));
+              d.elems && this.danmaku.push(...d.elems);
             }).catch((e) => {
               console.warn("弹幕丢包：", \`segment_index=\${i}\`, e);
             })
@@ -7913,7 +7913,7 @@ const MODULES = `
         dmWebView.specialDms && dmWebView.specialDms.forEach((d) => {
           promises.push(
             this.specialDm(d.replace("http:", "")).then((d2) => {
-              d2.elems && (this.danmaku = this.danmaku.concat(d2.elems));
+              d2.elems && this.danmaku.push(...d2.elems);
             }).catch((e) => {
               console.warn("高级弹幕丢包：", d, e);
             })
@@ -8222,7 +8222,7 @@ const MODULES = `
     return open.call(this, ...args);
   };
   function xhrHook(url, modifyOpen, modifyResponse, once = true) {
-    let id;
+    let id = 0;
     const one = Array.isArray(url) ? url : [url];
     const two = function(args) {
       once && id && delete rules[id - 1];
@@ -8271,7 +8271,7 @@ const MODULES = `
     const two = function(args) {
       try {
         if (!condition || condition(args)) {
-          this.xhrhookTimes = this.xhrhookTimes ? this.xhrhookTimes++ : 1;
+          this.xhrhookTimes = this.xhrhookTimes ? this.xhrhookTimes + 1 : 1;
           id && (temp = rules[id - 1]);
           delete rules[id - 1];
           this.send = () => true;
@@ -8317,8 +8317,7 @@ const MODULES = `
           }).finally(() => {
             clearInterval(et2);
             !once && (id = rules.push(temp));
-          }) : (this.abort(), !once && (id = rules.push(temp)));
-          clearInterval(et2);
+          }) : (this.abort(), !once && (id = rules.push(temp)), clearInterval(et2));
         }
       } catch (e) {
         debug.error("condition of xhrhook", one, e);
@@ -8415,13 +8414,17 @@ const MODULES = `
       }));
     }
     fetch;
-    async getDate() {
-      const respense = await this.fetch;
-      return await respense.json();
+    async getData() {
+      try {
+        const respense = await this.fetch;
+        return await respense.json();
+      } catch (e) {
+        throw new Error("BiliPlus API不可用，请使用官方API获取视频信息");
+      }
     }
     /** 转化为\`apiViewDetail\`格式 */
     async toDetail() {
-      const json = await this.getDate();
+      const json = await this.getData();
       return this.view2Detail(json);
     }
     view2Detail(data) {
@@ -8445,7 +8448,7 @@ const MODULES = `
       } else return this.view2Detail_v1(data);
     }
     view2Detail_v1(data) {
-      var _a3, _b2, _c, _d, _e, _f, _g;
+      var _a3, _b3, _c2, _d, _e, _f, _g;
       if ("code" in data) {
         jsonCheck(data);
       }
@@ -8473,8 +8476,8 @@ const MODULES = `
           d.dimension = { width: 1920, height: 1080, rotate: 0 };
           return d;
         }),
-        pic: (_b2 = data.pic) != null ? _b2 : "",
-        pubdate: (_c = data.lastupdatets) != null ? _c : 0,
+        pic: (_b3 = data.pic) != null ? _b3 : "",
+        pubdate: (_c2 = data.lastupdatets) != null ? _c2 : 0,
         rights: {},
         stat: {
           aid: data.aid || data.id || this.aid,
@@ -8526,7 +8529,8 @@ const MODULES = `
       id: aid,
       type: "json"
     }));
-    return await response.json();
+    const json = await response.json();
+    return jsonCheck(json);
   }
 
   // src/io/api-x-view.ts
@@ -8698,7 +8702,7 @@ const MODULES = `
             } catch (e3) {
               debug.error("appkey", e3);
               try {
-                let data = await new apiBiliplusView(aid).getDate();
+                let data = await new apiBiliplusView(aid).getData();
                 catchs.aid[aid] = data.list || data.v2_app_api && data.v2_app_api.pages;
                 catchs.aid[aid].forEach((d) => d.aid = aid);
                 if (redirect && data.v2_app_api && data.v2_app_api.redirect_url) return urlParam(objUrl(data.v2_app_api.redirect_url, { aid, cid, ssid, epid, p }));
@@ -9728,11 +9732,11 @@ const MODULES = `
     }
     /** 从\`IBangumiSeasonResponse\`中提取 */
     bangumiSeason(data) {
-      var _a3, _b2;
+      var _a3, _b3;
       const album = data.title || data.jp_title;
       const artist = data.actors || data.staff || ((_a3 = data.up_info) == null ? void 0 : _a3.name);
       const pic = data.cover.replace("http:", "");
-      const bkg_cover = (_b2 = data.bkg_cover) == null ? void 0 : _b2.replace("http:", "");
+      const bkg_cover = (_b3 = data.bkg_cover) == null ? void 0 : _b3.replace("http:", "");
       this.bangumiEpisode(data.episodes, album, artist, pic, bkg_cover);
       this.emitChange();
     }
@@ -10025,7 +10029,9 @@ const MODULES = `
   async function urlSign(url, searchParams = {}, appkey = "c1b107428d337928") {
     const api = new ApiSign(url, appkey);
     const response = await fetch(api.sign(searchParams).toJSON());
-    return await response.json();
+    const json = await response.json();
+    if (json.code && json.code !== 0) throw new Error(json.message || \`API error: \${json.code}\`);
+    return json;
   }
 
   // src/io/fnval.ts
@@ -10286,7 +10292,7 @@ const MODULES = `
     message = "";
     no_rexcode = 1;
     quality = 80;
-    result = "suee";
+    result = "success";
     seek_param = "start";
     seek_type = "offset";
     status = 2;
@@ -10326,7 +10332,8 @@ const MODULES = `
     }
     async getData() {
       const response = await fetch(this.sign().toJSON(), { credentials: "include" });
-      return await response.json();
+      const json = await response.json();
+      return jsonCheck(json);
     }
   };
 
@@ -12477,8 +12484,8 @@ const MODULES = `
     wbits(out, p++, final);
     ++lf[256];
     var _a3 = hTree(lf, 15), dlt = _a3.t, mlb = _a3.l;
-    var _b2 = hTree(df, 15), ddt = _b2.t, mdb = _b2.l;
-    var _c = lc(dlt), lclt = _c.c, nlc = _c.n;
+    var _b3 = hTree(df, 15), ddt = _b3.t, mdb = _b3.l;
+    var _c2 = lc(dlt), lclt = _c2.c, nlc = _c2.n;
     var _d = lc(ddt), lcdt = _d.c, ndc = _d.n;
     var lcfreq = new u16(19);
     for (var i = 0; i < lclt.length; ++i)
@@ -13326,7 +13333,7 @@ const MODULES = `
       dash.video && this.dashVideo(dash.video, dash.duration);
       dash.audio && this.dashAudio(dash.audio, dash.duration);
       dash.dolby && dash.dolby.audio && Array.isArray(dash.dolby.audio) && this.dashAudio(dash.dolby.audio, dash.duration);
-      dash.flac && dash.flac.audio && this.dashAudio([dash.flac.audio], dash.duration, ".flac");
+      dash.flac && dash.flac.audio && this.dashAudio([dash.flac.audio], dash.duration, "flac");
     }
     /**
      * 整理dash视频部分
@@ -13362,7 +13369,7 @@ const MODULES = `
      * @param duration duration信息，配合bandwidth能计算出文件大小
      * @param fmt 音频拓展名，默认\`.m4a\`
      */
-    dashAudio(audio, duration, fmt = ".m4a") {
+    dashAudio(audio, duration, fmt = "m4a") {
       audio.forEach((d) => {
         const url = d.backupUrl || d.backup_url || [];
         (d.baseUrl || d.base_url) && url.unshift(d.baseUrl || d.base_url);
@@ -13725,8 +13732,12 @@ const MODULES = `
   // src/io/api-biliplus-playurl.ts
   init_tampermonkey();
   async function apiBiliplusPlayurl(data) {
-    const response = await fetch(objUrl("//www.biliplus.com/BPplayurl.php", data));
-    return await response.json();
+    try {
+      const response = await fetch(objUrl("//www.biliplus.com/BPplayurl.php", data));
+      return await response.json();
+    } catch (e) {
+      throw new Error("BiliPlus API不可用，请使用官方API或更换代理服务器");
+    }
   }
 
   // src/io/api-global-ogv-playurl.ts
@@ -13822,7 +13833,7 @@ const MODULES = `
           playurl.dash.minBufferTime = playurl.dash.min_buffer_time = 1.5;
           Promise.all([
             ...d.video_info.stream_list.map((d2) => (async () => {
-              var _a3, _b2;
+              var _a3, _b3;
               if (d2.dash_video && d2.dash_video.base_url) {
                 const id = d2.stream_info.quality;
                 playurl.accept_description.push(PlayurlDescriptionMap[id]);
@@ -13863,7 +13874,7 @@ const MODULES = `
                   sar: "1:1",
                   startWithSap: 1,
                   start_with_sap: 1,
-                  width: (_b2 = PlayurlResolution[id]) == null ? void 0 : _b2[0]
+                  width: (_b3 = PlayurlResolution[id]) == null ? void 0 : _b3[0]
                 });
               }
             })()),
@@ -14220,8 +14231,14 @@ const MODULES = `
               (upInfo.mid == 1988098633 || upInfo.mid == 2042149112) && (obj.module = "movie");
             }
             this.toast.push(\`> 代理服务器：内置\`, \`> 类型：\${obj.module}\`);
-            const res = await apiBiliplusPlayurl(obj);
-            this.Backup[args[1]] = { code: 0, message: "success", result: res };
+            try {
+              const res = await apiBiliplusPlayurl(obj);
+              this.Backup[args[1]] = { code: 0, message: "success", result: res };
+            } catch (biliplusError) {
+              this.toast.push("> BiliPlus API不可用，尝试官方API...");
+              const res = await this.gat(obj);
+              this.Backup[args[1]] = { code: 0, message: "success", result: res };
+            }
           } else {
             const res = await this.gat(obj);
             this.Backup[args[1]] = { code: 0, message: "success", result: res };
@@ -14254,9 +14271,9 @@ const MODULES = `
       obj.seasonId && (BLOD.ssid = obj.seasonId);
       obj.episodeId && (BLOD.epid = obj.episodeId);
       obj.ep_id && (BLOD.epid = obj.ep_id);
-      obj.aid && (BLOD.aid = Number(obj.aid)) && (BLOD.aid = obj.aid);
-      obj.avid && (BLOD.aid = Number(obj.avid)) && (BLOD.aid = obj.avid);
-      obj.cid && (BLOD.cid = Number(obj.cid)) && (BLOD.cid = obj.cid);
+      obj.aid && (BLOD.aid = Number(obj.aid));
+      obj.avid && (BLOD.aid = Number(obj.avid));
+      obj.cid && (BLOD.cid = Number(obj.cid));
     }
     /** 访问泰区代理 */
     async th(obj) {
@@ -14284,6 +14301,8 @@ const MODULES = `
         if (this.area > 2)
           throw new Error("代理服务器不可用！");
         return await this.gat(obj);
+      } finally {
+        if (this.area <= 2) this.area = 0;
       }
     }
     /** 用于过滤upos提示 */
@@ -14514,10 +14533,10 @@ const MODULES = `
       return this._BAPIAppPlayurlV1;
     }
     image() {
-      var _a3, _b2, _c, _d, _e, _f, _g, _h, _i, _j;
+      var _a3, _b3, _c2, _d, _e, _f, _g, _h, _i, _j;
       const src = [];
-      (_b2 = (_a3 = videoInfo.metadata) == null ? void 0 : _a3.artwork) == null ? void 0 : _b2.forEach((d) => src.push(d.src));
-      if (location.host === "live.bilibili.com" && ((_f = (_e = (_d = (_c = window.__NEPTUNE_IS_MY_WAIFU__) == null ? void 0 : _c.roomInfoRes) == null ? void 0 : _d.data) == null ? void 0 : _e.room_info) == null ? void 0 : _f.cover)) {
+      (_b3 = (_a3 = videoInfo.metadata) == null ? void 0 : _a3.artwork) == null ? void 0 : _b3.forEach((d) => src.push(d.src));
+      if (location.host === "live.bilibili.com" && ((_f = (_e = (_d = (_c2 = window.__NEPTUNE_IS_MY_WAIFU__) == null ? void 0 : _c2.roomInfoRes) == null ? void 0 : _d.data) == null ? void 0 : _e.room_info) == null ? void 0 : _f.cover)) {
         src.push((_j = (_i = (_h = (_g = window.__NEPTUNE_IS_MY_WAIFU__) == null ? void 0 : _g.roomInfoRes) == null ? void 0 : _h.data) == null ? void 0 : _i.room_info) == null ? void 0 : _j.cover);
       }
       if (/\\/read\\/[Cc][Vv]/.test(location.href)) {
@@ -14684,6 +14703,94 @@ const MODULES = `
     }
   };
 
+  // src/core/cleanup.ts
+  init_tampermonkey();
+  var NEW_BILIBILI_SELECTORS = [
+    // 新版顶栏/导航栏
+    "#internationalHeader",
+    "#biliMainHeader",
+    "#bili-header-container",
+    "#home_nav",
+    ".bili-header__bar",
+    ".large-header",
+    ".header-channel",
+    ".z_top_container",
+    // 新版页脚
+    ".international-footer",
+    "#biliMainFooter",
+    // 新版播放器容器
+    ".bili-player-video-progress-detail-img",
+    // 新版布局干扰元素
+    ".lt-row",
+    ".bili-header.large-header",
+    // 新版样式文件
+    '[href*="laputa-header"]'
+  ];
+  var NEW_MAIN_CONTAINER = ".main-container";
+  var CleanupManager = class {
+    observer = null;
+    isActive = false;
+    /** 排除的选择器，不会被清理 */
+    excludedSelectors = /* @__PURE__ */ new Set();
+    /** 防抖定时器 */
+    debounceTimer = 0;
+    /** 排除指定选择器，使其不被清理 */
+    exclude(selector) {
+      this.excludedSelectors.add(selector);
+    }
+    /** 开始监听并清理新版元素 */
+    start() {
+      if (this.isActive) return;
+      this.isActive = true;
+      this.cleanup();
+      this.observer = new MutationObserver(() => {
+        if (this.debounceTimer) return;
+        this.debounceTimer = setTimeout(() => {
+          this.debounceTimer = 0;
+          this.cleanup();
+        }, 100);
+      });
+      this.observer.observe(document.documentElement, {
+        childList: true,
+        subtree: true
+      });
+      debug("cleanup manager started");
+    }
+    /** 停止监听 */
+    stop() {
+      if (this.observer) {
+        this.observer.disconnect();
+        this.observer = null;
+      }
+      if (this.debounceTimer) {
+        clearTimeout(this.debounceTimer);
+        this.debounceTimer = 0;
+      }
+      this.isActive = false;
+      debug("cleanup manager stopped");
+    }
+    /** 清理新版元素 */
+    cleanup() {
+      try {
+        NEW_BILIBILI_SELECTORS.forEach((selector) => {
+          if (this.excludedSelectors.has(selector)) return;
+          document.querySelectorAll(selector).forEach((el) => {
+            if (el instanceof HTMLElement) {
+              el.style.display = "none";
+            }
+          });
+        });
+        const mainContainer = document.querySelector(NEW_MAIN_CONTAINER);
+        if (mainContainer instanceof HTMLElement) {
+          mainContainer.removeAttribute("style");
+        }
+      } catch (e) {
+        debug.error("cleanup error:", e);
+      }
+    }
+  };
+  var cleanup = new CleanupManager();
+
   // src/page/header.ts
   init_tampermonkey();
 
@@ -14727,7 +14834,7 @@ const MODULES = `
     return insertBefore.call(this, newChild, refChild);
   };
   function jsonpHook(url, redirect, modifyResponse, once = true) {
-    let id;
+    let id = 0;
     const one = Array.isArray(url) ? url : [url];
     const two = function() {
       once && id && delete jsonp[id - 1];
@@ -14761,7 +14868,7 @@ const MODULES = `
     };
   }
   jsonpHook.async = (url, condition, modifyResponse, once = true) => {
-    let id;
+    let id = 0;
     const one = Array.isArray(url) ? url : [url];
     const two = function() {
       try {
@@ -23857,29 +23964,33 @@ const MODULES = `
       177: 2260,
       188: 3129
     };
-    /**
-     * 根据页面返回resourceId
-     * @returns resourceId
-     */
+    /** 频道名到资源id映射 */
+    static channelRid = {
+      "douga": 1576,
+      "music": 1580,
+      "dance": 1584,
+      "game": 1588,
+      "knowledge": 1592,
+      "tech": 3129,
+      "life": 1600,
+      "kichiku": 1608,
+      "fashion": 1604,
+      "ent": 1596,
+      "cinephile": 2210
+    };
     static resourceId() {
       var _a3;
       const tid = window.bid || window.tid || window.topid;
       if (tid) {
         return (_a3 = this.tid[tid]) != null ? _a3 : 142;
       }
-      if (location.href.includes("v/douga")) return 1576;
+      for (const [name, rid] of Object.entries(this.channelRid)) {
+        if (location.href.includes(\`v/\${name}\`) || location.href.includes(\`c/\${name}\`)) {
+          return rid;
+        }
+      }
       if (location.href.includes("/anime")) return 1612;
-      if (location.href.includes("v/music")) return 1580;
       if (location.href.includes("/guochuang")) return 1920;
-      if (location.href.includes("v/dance")) return 1584;
-      if (location.href.includes("v/game")) return 1588;
-      if (location.href.includes("v/knowledge")) return 1592;
-      if (location.href.includes("v/tech")) return 3129;
-      if (location.href.includes("v/life")) return 1600;
-      if (location.href.includes("v/kichiku")) return 1608;
-      if (location.href.includes("v/fashion")) return 1604;
-      if (location.href.includes("v/ent")) return 1596;
-      if (location.href.includes("v/cinephile")) return 2210;
       if (location.href.includes("/cinema")) return 1634;
       return 142;
     }
@@ -23994,7 +24105,7 @@ const MODULES = `
     }
     /** 是否mini顶栏 */
     static isMiniHead(d) {
-      if (/\\/v\\/(douga|music|dance|game|knowledge|tech|life|kichiku|fashion|information|ent|cinephile|car|sports|animal)\\//.test(location.href)) return true;
+      if (/\\/[vc]\\/(douga|music|dance|game|knowledge|tech|life|kichiku|fashion|information|ent|cinephile|car|sports|animal)\\/?/.test(location.href)) return true;
       if (/\\/mooc\\//.test(location.href)) return true;
       return location.href.includes("blackboard/topic_list") || location.href.includes("blackboard/x/act_list") || document.querySelector(".large-header") || document.querySelector(".bili-banner") || (d == null ? void 0 : d.getAttribute("type")) == "all" ? false : true;
     }
@@ -24014,7 +24125,8 @@ const MODULES = `
       });
       poll(() => document.querySelector(".z_top_container"), (d) => {
         this.loadOldHeader(d);
-        document.querySelector(".header").style.display = "none";
+        const header = document.querySelector(".header");
+        if (header) header.style.display = "none";
       });
     }
     /** 已加载旧版顶栏 */
@@ -24433,7 +24545,7 @@ const MODULES = `
                 if (ele) {
                   const medias = ele.__vue__.favListDetails.medias;
                   medias == null ? void 0 : medias.forEach((d) => {
-                    var _a4, _b2;
+                    var _a4, _b3;
                     if (d.attr % 2) {
                       msg.push(\`> av\${d.id}\`);
                       if (this.aidInfo[d.id].title) {
@@ -24447,7 +24559,7 @@ const MODULES = `
                       }
                       this.aidInfo[d.id].cover && (d.cover = this.aidInfo[d.id].cover);
                       d.attr = 0;
-                      (_b2 = (_a4 = ele.querySelector(\`[data-aid=\${d.bvid}]\`)) == null ? void 0 : _a4.children[1]) == null ? void 0 : _b2.setAttribute("style", "text-decoration : line-through;color : #ff0000;");
+                      (_b3 = (_a4 = ele.querySelector(\`[data-aid=\${d.bvid}]\`)) == null ? void 0 : _a4.children[1]) == null ? void 0 : _b3.setAttribute("style", "text-decoration : line-through;color : #ff0000;");
                     }
                   });
                 }
@@ -24912,8 +25024,8 @@ const MODULES = `
         try {
           const response = jsonCheck(r.response);
           response.data.items = response.data.items.filter((d) => {
-            var _a3, _b2, _c, _d, _e;
-            return ((_e = (_d = (_c = (_b2 = (_a3 = d.modules) == null ? void 0 : _a3.module_dynamic) == null ? void 0 : _b2.major) == null ? void 0 : _c.archive) == null ? void 0 : _d.badge) == null ? void 0 : _e.text) != "直播回放";
+            var _a3, _b3, _c2, _d, _e;
+            return ((_e = (_d = (_c2 = (_b3 = (_a3 = d.modules) == null ? void 0 : _a3.module_dynamic) == null ? void 0 : _b3.major) == null ? void 0 : _c2.archive) == null ? void 0 : _d.badge) == null ? void 0 : _e.text) != "直播回放";
           });
           r.responseType === "json" ? r.response = response : r.response = r.responseText = JSON.stringify(response);
         } catch (e) {
@@ -25046,10 +25158,12 @@ const MODULES = `
     }
     /** 重写页面 */
     updateDom() {
+      var _a3;
       const title = document.title;
       this.webpackJsonp || Reflect.deleteProperty(window, "webpackJsonp");
       this.vdom.replace(document.documentElement);
       title && !title.includes("404") && (document.title = title);
+      (_a3 = document.getElementById("bilibili-old-preload")) == null ? void 0 : _a3.remove();
       setTimeout(() => this.loadedCallback());
     }
     /** 重写完成回调 */
@@ -28873,10 +28987,10 @@ const MODULES = `
     simpleChinese() {
       if (user.userStatus.simpleChinese) {
         xhrHook("x/player/v2?", void 0, (res) => {
-          var _a3, _b2, _c;
+          var _a3, _b3, _c2;
           try {
             const response = jsonCheck(res.response);
-            if ((_c = (_b2 = (_a3 = response == null ? void 0 : response.data) == null ? void 0 : _a3.subtitle) == null ? void 0 : _b2.subtitles) == null ? void 0 : _c.length) {
+            if ((_c2 = (_b3 = (_a3 = response == null ? void 0 : response.data) == null ? void 0 : _a3.subtitle) == null ? void 0 : _b3.subtitles) == null ? void 0 : _c2.length) {
               response.data.subtitle.subtitles.forEach((d) => {
                 if (typeof d.subtitle_url === "string") {
                   switch (d.lan) {
@@ -29244,7 +29358,7 @@ const MODULES = `
     /** 修复评论跳转 */
     jump() {
       jsonpHook.async("x/v2/reply/jump?", void 0, async (url) => {
-        var _a3, _b2;
+        var _a3, _b3;
         const obj = urlObj(url);
         const data = await fetch(\`https://api.bilibili.com/x/v2/reply/main?csrf=6c09e4c6405d1369c9e94e0d0a4f6790&mode=3&oid=\${obj.oid}&pagination_str=%7B%22offset%22:%22%22%7D&plat=1&seek_rpid=\${obj.rpid}&type=\${obj.type}\`, { credentials: "include" });
         const json = await data.json();
@@ -29255,7 +29369,7 @@ const MODULES = `
             config,
             control,
             mode: (_a3 = cursor.mode) != null ? _a3 : 3,
-            page: { acount: cursor.all_count, count: (_b2 = this.count) != null ? _b2 : cursor.all_count, num: 1, rt_num: 1, size: 20 },
+            page: { acount: cursor.all_count, count: (_b3 = this.count) != null ? _b3 : cursor.all_count, num: 1, rt_num: 1, size: 20 },
             replies: seek_root_reply ? [seek_root_reply].concat(replies) : replies,
             support_mode: cursor.support_mode,
             top,
@@ -29369,7 +29483,7 @@ const MODULES = `
     /** 顶层评论ip属地 */
     _createListCon() {
       Feedback.prototype._createListCon = function(item, i, pos) {
-        var _a3, _b2;
+        var _a3, _b3;
         const blCon = this._parentBlacklistDom(item, i, pos);
         const con = [
           '<div class="con ' + (pos == i ? "no-border" : "") + '">',
@@ -29385,7 +29499,7 @@ const MODULES = `
           this._createPlatformDom(item.content.plat),
           '<span class="time-location">',
           '<span class="reply-time">'.concat(this._formateTime(item.ctime), "</span>"),
-          ((_a3 = item == null ? void 0 : item.reply_control) == null ? void 0 : _a3.location) ? \`<span class="reply-location">\${((_b2 = item == null ? void 0 : item.reply_control) == null ? void 0 : _b2.location) || ""}</span>\` : "",
+          ((_a3 = item == null ? void 0 : item.reply_control) == null ? void 0 : _a3.location) ? \`<span class="reply-location">\${((_b3 = item == null ? void 0 : item.reply_control) == null ? void 0 : _b3.location) || ""}</span>\` : "",
           "</span>",
           item.lottery_id ? "" : '<span class="like ' + (item.action == 1 ? "liked" : "") + '"><i></i><span>' + (item.like ? item.like : "") + "</span></span>",
           item.lottery_id ? "" : '<span class="hate ' + (item.action == 2 ? "hated" : "") + '"><i></i></span>',
@@ -29408,7 +29522,7 @@ const MODULES = `
     /** 楼中楼评论ip属地 */
     _createSubReplyItem() {
       Feedback.prototype._createSubReplyItem = function(item, i) {
-        var _a3, _b2;
+        var _a3, _b3;
         if (item.invisible) {
           return "";
         }
@@ -29428,7 +29542,7 @@ const MODULES = `
           this._createPlatformDom(item.content.plat),
           '<span class="time-location">',
           '<span class="reply-time">'.concat(this._formateTime(item.ctime), "</span>"),
-          ((_a3 = item == null ? void 0 : item.reply_control) == null ? void 0 : _a3.location) ? \`<span class="reply-location">\${((_b2 = item == null ? void 0 : item.reply_control) == null ? void 0 : _b2.location) || ""}</span>\` : "",
+          ((_a3 = item == null ? void 0 : item.reply_control) == null ? void 0 : _a3.location) ? \`<span class="reply-location">\${((_b3 = item == null ? void 0 : item.reply_control) == null ? void 0 : _b3.location) || ""}</span>\` : "",
           "</span>",
           '<span class="like ' + (item.action == 1 ? "liked" : "") + '"><i></i><span>' + (item.like ? item.like : "") + "</span></span>",
           '<span class="hate ' + (item.action == 2 ? "hated" : "") + '"><i></i></span>',
@@ -29543,15 +29657,15 @@ const MODULES = `
             operalist && (operalist.style.display = "none");
         });
         n.on("click.image-exhibition", ".image-item-img", function(e2) {
-          var _a3, _b2, _c;
+          var _a3, _b3, _c2;
           const src = this.src;
           const srcs = [];
-          (_b2 = (_a3 = this.parentElement) == null ? void 0 : _a3.parentElement) == null ? void 0 : _b2.querySelectorAll("img").forEach((d) => {
+          (_b3 = (_a3 = this.parentElement) == null ? void 0 : _a3.parentElement) == null ? void 0 : _b3.querySelectorAll("img").forEach((d) => {
             srcs.push(d.src);
           });
           srcs.length || srcs.push(src);
           previewImage || (previewImage = new PreviewImage());
-          previewImage.value(srcs, (_c = this.parentElement) == null ? void 0 : _c.classList.contains("vertical"), srcs.indexOf(src));
+          previewImage.value(srcs, (_c2 = this.parentElement) == null ? void 0 : _c2.classList.contains("vertical"), srcs.indexOf(src));
         });
       };
     }
@@ -29595,10 +29709,10 @@ const MODULES = `
     /** 评论图片 */
     _resolvePictures() {
       Feedback.prototype._resolvePictures = function(content) {
-        var _a3, _b2, _c, _d;
+        var _a3, _b3, _c2, _d;
         const pictureList = [];
         if (content) {
-          if ((_b2 = (_a3 = content.rich_text) == null ? void 0 : _a3.note) == null ? void 0 : _b2.images) {
+          if ((_b3 = (_a3 = content.rich_text) == null ? void 0 : _a3.note) == null ? void 0 : _b3.images) {
             if (!content.pictures) {
               content.pictures = [];
               content.rich_text.note.images.forEach((d) => {
@@ -29609,7 +29723,7 @@ const MODULES = `
               });
             }
           }
-          if (((_d = (_c = content.rich_text) == null ? void 0 : _c.note) == null ? void 0 : _d.click_url) && !content.message.includes(content.rich_text.note.click_url)) {
+          if (((_d = (_c2 = content.rich_text) == null ? void 0 : _c2.note) == null ? void 0 : _d.click_url) && !content.message.includes(content.rich_text.note.click_url)) {
             pictureList.push(\`<a href="\${content.rich_text.note.click_url}" target="_blank" style="font-size: 14px;">\${content.rich_text.note.click_url}</a>\`);
           }
           if (content.pictures && content.pictures.length) {
@@ -37278,12 +37392,12 @@ const MODULES = `
     related() {
       const related = {};
       xhrHook.async("x/web-interface/archive/related", () => {
-        var _a3, _b2;
-        return (_b2 = (_a3 = window.__INITIAL_STATE__) == null ? void 0 : _a3.mediaInfo) == null ? void 0 : _b2.title;
+        var _a3, _b3;
+        return (_b3 = (_a3 = window.__INITIAL_STATE__) == null ? void 0 : _a3.mediaInfo) == null ? void 0 : _b3.title;
       }, async () => {
-        var _a3, _b2;
+        var _a3, _b3;
         let response = { code: 0, data: [], message: "0" };
-        if (related[(_b2 = (_a3 = window.__INITIAL_STATE__) == null ? void 0 : _a3.mediaInfo) == null ? void 0 : _b2.title]) {
+        if (related[(_b3 = (_a3 = window.__INITIAL_STATE__) == null ? void 0 : _a3.mediaInfo) == null ? void 0 : _b3.title]) {
           response.data = related[window.__INITIAL_STATE__.mediaInfo.title];
         } else {
           await apiTagInfo(window.__INITIAL_STATE__.mediaInfo.title).then((d) => {
@@ -37541,7 +37655,7 @@ const MODULES = `
     }
     /** 尝试东南亚接口 */
     async initGlobal() {
-      var _a3, _b2, _c, _d, _e, _f, _g;
+      var _a3, _b3, _c2, _d, _e, _f, _g;
       const data = this.epid ? { ep_id: this.epid } : { season_id: this.ssid };
       Object.assign(data, { access_key: user.userStatus.accessKey.token });
       const d = await new ApiGlobalOgvView(data, user.userStatus.videoLimit.th).getDate();
@@ -37599,9 +37713,9 @@ const MODULES = `
         season_type: i.type,
         series_title: i.title,
         square_cover: i.square_cover,
-        staff: (_b2 = i.actor) == null ? void 0 : _b2.info,
+        staff: (_b3 = i.actor) == null ? void 0 : _b3.info,
         stat: i.stat,
-        style: (_c = i.styles) == null ? void 0 : _c.map((d_3) => d_3.name),
+        style: (_c2 = i.styles) == null ? void 0 : _c2.map((d_3) => d_3.name),
         title: i.title,
         total_ep: i.total
       };
@@ -38666,10 +38780,10 @@ const MODULES = `
         jsonpHook("x/web-interface/search/all/v2?", void 0, (res, url) => {
           const keyword = decodeURIComponent(urlObj(url).keyword);
           (keyword in record ? timeout(record[keyword]) : new ApiSearch(keyword).getData()).then((data) => {
-            var _a3, _b2;
+            var _a3, _b3;
             record[keyword] = data;
             const vue = (_a3 = document.querySelector("#all-list > div.flow-loader")) == null ? void 0 : _a3.__vue__;
-            if (vue && ((_b2 = data == null ? void 0 : data.result) == null ? void 0 : _b2.media_bangumi.length)) {
+            if (vue && ((_b3 = data == null ? void 0 : data.result) == null ? void 0 : _b3.media_bangumi.length)) {
               vue.source.result.forEach((d) => {
                 switch (d.result_type) {
                   case "media_bangumi": {
@@ -38691,10 +38805,10 @@ const MODULES = `
           return res;
         }, false);
         jsonpHook(["x/web-interface/search/type?", "search_type=media_bangumi"], void 0, (res, url) => {
-          var _a3, _b2, _c;
+          var _a3, _b3, _c2;
           const keyword = decodeURIComponent(urlObj(url).keyword);
           const data = record[keyword];
-          if (((_a3 = data == null ? void 0 : data.result) == null ? void 0 : _a3.media_bangumi.length) && ((_c = (_b2 = res == null ? void 0 : res.data) == null ? void 0 : _b2.result) == null ? void 0 : _c.length)) {
+          if (((_a3 = data == null ? void 0 : data.result) == null ? void 0 : _a3.media_bangumi.length) && ((_c2 = (_b3 = res == null ? void 0 : res.data) == null ? void 0 : _b3.result) == null ? void 0 : _c2.length)) {
             const arr2 = [].concat(res.data.result);
             const names = arr2.map((d) => d.season_id);
             data.result.media_bangumi.forEach((d) => {
@@ -38710,8 +38824,8 @@ const MODULES = `
     /** 修复搜索数据 */
     rqt() {
       jsonpHook("/search/all", void 0, (res) => {
-        var _a3, _b2;
-        (_b2 = (_a3 = res.data) == null ? void 0 : _a3.result) == null ? void 0 : _b2.forEach((d) => {
+        var _a3, _b3;
+        (_b3 = (_a3 = res.data) == null ? void 0 : _a3.result) == null ? void 0 : _b3.forEach((d) => {
           d.data || (d.data = []);
         });
       }, false);
@@ -39282,8 +39396,8 @@ const MODULES = `
     constructor() {
       super();
       this.addEventListener("click", () => {
-        var _a3, _b2;
-        (_b2 = (_a3 = this.parentElement) == null ? void 0 : _a3.querySelector(".selected")) == null ? void 0 : _b2.classList.remove("selected");
+        var _a3, _b3;
+        (_b3 = (_a3 = this.parentElement) == null ? void 0 : _a3.querySelector(".selected")) == null ? void 0 : _b3.classList.remove("selected");
         this.classList.add("selected");
         this.show();
       });
@@ -39464,13 +39578,12 @@ const MODULES = `
           this.checkboxs[d] = checkbox;
         }
       });
-      this.\$value.forEach((d) => {
+      const toRemove = this.\$value.filter((d) => !labels.includes(d));
+      toRemove.forEach((d) => {
         var _a3;
-        if (!labels.includes(d)) {
-          (_a3 = this.checkboxs[d]) == null ? void 0 : _a3.remove();
-          const i = this.\$value.indexOf(d);
-          i >= 0 && this.\$value.splice(i, 1);
-        }
+        (_a3 = this.checkboxs[d]) == null ? void 0 : _a3.remove();
+        const i = this.\$value.indexOf(d);
+        i >= 0 && this.\$value.splice(i, 1);
       });
     }
   };
@@ -40758,6 +40871,99 @@ const MODULES = `
     }
   };
 
+  // src/page/channel/channel.ts
+  init_tampermonkey();
+
+  // src/html/channel.html
+  var channel_default = '<!DOCTYPE html>\\n<html lang="zh-Hans">\\n\\n<head>\\n    <meta charset="utf-8">\\n    <title>哔哩哔哩 (゜-゜)つロ 干杯~-bilibili</title>\\n    <meta name="description" content="bilibili是国内知名的视频弹幕网站，这里有最及时的动漫新番，最棒的ACG氛围，最有创意的Up主。大家可以在这里找到许多欢乐。">\\n    <meta name="keywords" content="B站,弹幕,字幕,AMV,MAD,MTV,ANIME,动漫,动漫音乐,游戏,游戏解说,ACG,galgame,动画,番组,新番,初音,洛天依,vocaloid">\\n    <meta name="renderer" content="webkit">\\n    <meta http-equiv="X-UA-Compatible" content="IE=edge">\\n    <link rel="dns-prefetch" href="//s1.hdslb.com">\\n    <link rel="dns-prefetch" href="//i0.hdslb.com">\\n    <link rel="dns-prefetch" href="//i1.hdslb.com">\\n    <link rel="dns-prefetch" href="//i2.hdslb.com">\\n    <link rel="dns-prefetch" href="//static.hdslb.com">\\n    <link rel="shortcut icon" href="//static.hdslb.com/images/favicon.ico">\\n    <link rel="search" type="application/opensearchdescription+xml" href="//static.hdslb.com/opensearch.xml"\\n        title="哔哩哔哩">\\n    <link rel="stylesheet"\\n        href="//s1.hdslb.com/bfs/static/jinkela/channel/css/channel.1.19140d0925708402aa0179a70a72043400bf4200.css">\\n    <style>\\n        .pgc-rank-list .rank-item.highlight .ri-num {\\n            background: #f25d8e;\\n        }\\n\\n        .pgc-rank-list.v2 .rank-item.highlight .ri-num {\\n            background: #f25d8e;\\n        }\\n    </style>\\n</head>\\n\\n<body>\\n    <div class="z-top-container has-menu"></div>\\n    <div id="channel-app"></div>\\n    <div id="app"></div>\\n    <script type="text/javascript" src="//static.hdslb.com/js/jquery.min.js"><\\/script>\\n    <script type="text/javascript" src="//s1.hdslb.com/bfs/cm/st/bundle.js"><\\/script>\\n    <script src="//s1.hdslb.com/bfs/static/jinkela/channel/manifest.19140d0925708402aa0179a70a72043400bf4200.js"\\n        defer><\\/script>\\n    <script src="//s1.hdslb.com/bfs/static/jinkela/channel/vendor.19140d0925708402aa0179a70a72043400bf4200.js"\\n        defer><\\/script>\\n    <script src="//s1.hdslb.com/bfs/static/jinkela/channel/channel.19140d0925708402aa0179a70a72043400bf4200.js"\\n        defer><\\/script>\\n    <div class="footer bili-footer report-wrap-module"></div>\\n    <script type="text/javascript" charset="utf-8" src="//static.hdslb.com/common/js/footer.js"><\\/script>\\n</body>\\n\\n</html>';
+
+  // src/page/channel/channel.ts
+  var channelTid = {
+    "douga": 1,
+    "music": 3,
+    "game": 4,
+    "ent": 5,
+    "dance": 129,
+    "kichiku": 119,
+    "knowledge": 36,
+    "fashion": 155,
+    "life": 160,
+    "cinephile": 181,
+    "tech": 188,
+    "information": 202
+  };
+  var channelTitle = {
+    "douga": "动画",
+    "music": "音乐",
+    "game": "游戏",
+    "ent": "娱乐",
+    "dance": "舞蹈",
+    "kichiku": "鬼畜",
+    "knowledge": "知识",
+    "fashion": "时尚",
+    "life": "生活",
+    "cinephile": "影视",
+    "tech": "科技",
+    "information": "资讯"
+  };
+  var PageChannel = class extends Page {
+    constructor() {
+      super(channel_default);
+      const name = BLOD.path[4];
+      if (name && location.pathname.includes("/c/")) {
+        urlCleaner.updateLocation(location.href.replace(new RegExp(\`/c/\${name}/?\`), \`/v/\${name}/\`));
+      }
+      if (name && channelTitle[name]) {
+        document.title = \`\${channelTitle[name]} - 哔哩哔哩 (゜-゜)つロ 干杯~-bilibili\`;
+      }
+      this.setChannelWindow();
+      Header.primaryMenu();
+      Header.banner();
+      this.updateDom();
+      this.sliderData();
+      this.checkChannelLoad();
+    }
+    /** 设置频道页所需的window全局变量 */
+    setChannelWindow() {
+      const name = BLOD.path[4];
+      if (name && channelTid[name]) {
+        window.tid = channelTid[name];
+      }
+    }
+    get carousel() {
+      switch (BLOD.path[4]) {
+        case "douga":
+          return 4973;
+        case "music":
+          return 4991;
+      }
+    }
+    sliderData() {
+      const carousel = this.carousel;
+      if (carousel) {
+        poll(() => document.querySelector(".channel-m>.nominate-m"), (slider) => {
+          fetch(\`https://api.bilibili.com/x/web-show/res/locs?pf=0&ids=\${carousel}\`).then((d) => d.json()).then((d) => {
+            if (slider && slider.__vue__ && d.data && d.data[carousel]) {
+              slider.__vue__.sliderData = d.data[carousel].filter((d2) => d2.name);
+            }
+          }).catch((e) => {
+            debug.error("channel carousel", e);
+          });
+        });
+      }
+    }
+    /** 检测旧版频道JS是否加载成功 */
+    checkChannelLoad() {
+      setTimeout(() => {
+        const app = document.querySelector("#channel-app");
+        if (app && (!app.children.length || !app.innerHTML.trim())) {
+          toast.warning("频道页旧版资源加载失败");
+          debug.warn("Channel jinkela JS failed to load");
+        }
+      }, 8e3);
+    }
+  };
+
   // src/page/logout.ts
   init_tampermonkey();
 
@@ -40798,9 +41004,12 @@ const MODULES = `
   }
 
   // src/index.ts
-  document.domain = "bilibili.com";
-  var _a2;
-  BLOD.version = (_a2 = GM.info) == null ? void 0 : _a2.script.version.slice(-40);
+  try {
+    document.domain = "bilibili.com";
+  } catch {
+  }
+  var _a2, _b2, _c;
+  BLOD.version = (_c = (_b2 = (_a2 = GM.info) == null ? void 0 : _a2.script) == null ? void 0 : _b2.version) == null ? void 0 : _c.slice(-40);
   user.addCallback((status) => {
     toast.update(status.toast);
     cdn.update(status.cdn, BLOD.version);
@@ -40867,6 +41076,9 @@ const MODULES = `
         if (/\\/documentary\\/?\$/.test(location.pathname)) {
           new PageDocumentary();
         }
+        if (/\\/c\\/(douga|music|dance|game|knowledge|tech|life|kichiku|fashion|information|ent|cinephile)\\/?\$/.test(location.pathname)) {
+          new PageChannel();
+        }
       }
     }
     player.nanoPermit();
@@ -40883,6 +41095,7 @@ const MODULES = `
       configurable: true
     });
     window.top === window.self && (BLOD.ui = new UI());
+    cleanup.start();
   });
   try {
     const bpx_player_profile = LocalStorage.getItem("bpx_player_profile") || { media: { autoplay: false } };

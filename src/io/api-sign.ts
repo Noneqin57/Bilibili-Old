@@ -134,5 +134,7 @@ export class ApiSign {
 export async function urlSign(url: string, searchParams = {}, appkey: keyof typeof APP_KEY = 'c1b107428d337928') {
     const api = new ApiSign(url, appkey);
     const response = await fetch(api.sign(searchParams).toJSON());
-    return await response.json();
+    const json = await response.json();
+    if (json.code && json.code !== 0) throw new Error(json.message || `API error: ${json.code}`);
+    return json;
 }

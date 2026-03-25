@@ -129,8 +129,14 @@ class VideoLimit {
                         (upInfo.mid == 1988098633 || upInfo.mid == 2042149112) && (obj.module = 'movie');
                     }
                     this.toast.push(`> 代理服务器：内置`, `> 类型：${obj.module}`);
-                    const res = await apiBiliplusPlayurl(<any>obj);
-                    this.Backup[args[1]] = { code: 0, message: "success", result: res };
+                    try {
+                        const res = await apiBiliplusPlayurl(<any>obj);
+                        this.Backup[args[1]] = { code: 0, message: "success", result: res };
+                    } catch (biliplusError) {
+                        this.toast.push('> BiliPlus API不可用，尝试官方API...');
+                        const res = await this.gat(obj);
+                        this.Backup[args[1]] = { code: 0, message: "success", result: res };
+                    }
                 } else {
                     // networkMock();
                     const res = await this.gat(obj);
@@ -163,9 +169,9 @@ class VideoLimit {
         obj.seasonId && (BLOD.ssid = <number>obj.seasonId);
         obj.episodeId && (BLOD.epid = <number>obj.episodeId);
         obj.ep_id && (BLOD.epid = <number>obj.ep_id);
-        obj.aid && (BLOD.aid = Number(obj.aid)) && (BLOD.aid = <number>obj.aid);
-        obj.avid && (BLOD.aid = Number(obj.avid)) && (BLOD.aid = <number>obj.avid);
-        obj.cid && (BLOD.cid = Number(obj.cid)) && (BLOD.cid = <number>obj.cid);
+        obj.aid && (BLOD.aid = Number(obj.aid));
+        obj.avid && (BLOD.aid = Number(obj.avid));
+        obj.cid && (BLOD.cid = Number(obj.cid));
     }
     /** 访问泰区代理 */
     protected async th(obj: Record<string, string | number>) {
@@ -194,6 +200,9 @@ class VideoLimit {
             if (this.area > 2)
                 throw new Error('代理服务器不可用！');
             return await this.gat(obj);
+        } finally {
+            // 成功或最终失败时重置area计数器
+            if (this.area <= 2) this.area = 0;
         }
     }
     /** 用于过滤upos提示 */

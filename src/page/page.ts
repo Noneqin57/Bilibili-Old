@@ -34,6 +34,8 @@ export abstract class Page {
         this.vdom.replace(document.documentElement);
         // 还原标题
         title && !title.includes("404") && (document.title = title);
+        // 移除预加载CSS，避免干扰旧版页面
+        document.getElementById('bilibili-old-preload')?.remove();
         setTimeout(() => this.loadedCallback());
     }
     /** 重写完成回调 */

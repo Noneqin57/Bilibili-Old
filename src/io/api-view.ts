@@ -1,5 +1,5 @@
 import { objUrl } from "../utils/format/url";
-import { IAidPage } from "./api";
+import { IAidPage, jsonCheck } from "./api";
 import { URLS } from "./urls";
 
 export async function apiView(aid: number | string) {
@@ -8,7 +8,8 @@ export async function apiView(aid: number | string) {
         id: aid,
         type: 'json'
     }));
-    return <IApiViewResponse>await response.json();
+    const json = await response.json();
+    return <IApiViewResponse>jsonCheck(json);
 }
 
 export interface IApiViewResponse {

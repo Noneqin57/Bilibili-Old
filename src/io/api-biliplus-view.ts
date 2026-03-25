@@ -12,14 +12,18 @@ export class apiBiliplusView {
             id: aid
         }))
     }
-    async getDate() {
-        const respense = await this.fetch;
-        return <IApiViewPlusResponse>await respense.json()
+    async getData() {
+        try {
+            const respense = await this.fetch;
+            return <IApiViewPlusResponse>await respense.json()
+        } catch (e) {
+            throw new Error('BiliPlus API不可用，请使用官方API获取视频信息');
+        }
 
     }
     /** 转化为`apiViewDetail`格式 */
     async toDetail() {
-        const json = await this.getDate();
+        const json = await this.getData();
         return <ApiViewDetail>this.view2Detail(json);
     }
     protected view2Detail(data: IApiViewPlusResponse) {

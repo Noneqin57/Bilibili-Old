@@ -189,7 +189,7 @@ export class ApiDmWeb {
                 promises.push(
                     this.DmSegMobileReply(i)
                         .then(d => {
-                            d.elems && (this.danmaku = this.danmaku.concat(d.elems));
+                            d.elems && this.danmaku.push(...d.elems);
                         })
                         .catch(e => {
                             console.warn('弹幕丢包：', `segment_index=${i}`, e);
@@ -200,7 +200,7 @@ export class ApiDmWeb {
                 promises.push(
                     this.specialDm(d.replace('http:', ''))
                         .then(d => {
-                            d.elems && (this.danmaku = this.danmaku.concat(d.elems));
+                            d.elems && this.danmaku.push(...d.elems);
                         })
                         .catch(e => {
                             console.warn('高级弹幕丢包：', d, e);

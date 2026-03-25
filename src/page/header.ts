@@ -43,28 +43,33 @@ export class Header {
         177: 2260,
         188: 3129
     }
-    /**
-     * 根据页面返回resourceId
-     * @returns resourceId
-     */
+    /** 频道名到资源id映射 */
+    private static readonly channelRid: Record<string, number> = {
+        'douga': 1576,
+        'music': 1580,
+        'dance': 1584,
+        'game': 1588,
+        'knowledge': 1592,
+        'tech': 3129,
+        'life': 1600,
+        'kichiku': 1608,
+        'fashion': 1604,
+        'ent': 1596,
+        'cinephile': 2210,
+    };
     static resourceId() {
         const tid: 13 = (<any>window).bid || (<any>window).tid || (<any>window).topid;
         if (tid) {
             return this.tid[tid] ?? 142;
         }
-        if (location.href.includes("v/douga")) return 1576;
+        // 同时匹配 /v/ 和 /c/ 路由
+        for (const [name, rid] of Object.entries(this.channelRid)) {
+            if (location.href.includes(`v/${name}`) || location.href.includes(`c/${name}`)) {
+                return rid;
+            }
+        }
         if (location.href.includes("/anime")) return 1612;
-        if (location.href.includes("v/music")) return 1580;
         if (location.href.includes("/guochuang")) return 1920;
-        if (location.href.includes("v/dance")) return 1584;
-        if (location.href.includes("v/game")) return 1588;
-        if (location.href.includes("v/knowledge")) return 1592;
-        if (location.href.includes("v/tech")) return 3129;
-        if (location.href.includes("v/life")) return 1600;
-        if (location.href.includes("v/kichiku")) return 1608;
-        if (location.href.includes("v/fashion")) return 1604;
-        if (location.href.includes("v/ent")) return 1596;
-        if (location.href.includes("v/cinephile")) return 2210;
         if (location.href.includes("/cinema")) return 1634;
         return 142;
     }
@@ -185,7 +190,7 @@ export class Header {
     /** 是否mini顶栏 */
     protected static isMiniHead(d?: HTMLElement) {
         // 各种分区主页一律使用mini顶栏
-        if (/\/v\/(douga|music|dance|game|knowledge|tech|life|kichiku|fashion|information|ent|cinephile|car|sports|animal)\//.test(location.href)) return true;
+        if (/\/[vc]\/(douga|music|dance|game|knowledge|tech|life|kichiku|fashion|information|ent|cinephile|car|sports|animal)\/?/.test(location.href)) return true;
         // 公开课使用mini顶栏
         if (/\/mooc\//.test(location.href)) return true;
         return (
@@ -217,7 +222,8 @@ export class Header {
         // 远古顶栏
         poll(() => document.querySelector<HTMLElement>('.z_top_container'), d => {
             this.loadOldHeader(d);
-            document.querySelector<HTMLElement>('.header')!.style.display = 'none';
+            const header = document.querySelector<HTMLElement>('.header');
+            if (header) header.style.display = 'none';
         })
         // poll(() => document.querySelector<HTMLElement>('.international-footer'), d => this.loadOldFooter(d));
         // poll(() => document.querySelector<HTMLElement>('#biliMainFooter'), d => this.loadOldFooter(d));

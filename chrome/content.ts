@@ -2,6 +2,39 @@ import { dispatchCustomEvent } from "./utils/dispatchcustomevent";
 import { executeScript } from "./utils/executescript";
 import { insertCSS } from "./utils/insertcss";
 
+// CSS预加载：隐藏新版B站元素，减少页面闪烁
+const preloadCSS = `
+/* 隐藏新版播放器容器 */
+#app .bpx-player-container,
+#app .bpx-player-primary-area,
+#app .bpx-player-video-wrap,
+#app .bpx-player-video-container,
+/* 隐藏新版顶栏 */
+.bili-header__bar,
+.bili-header__channel,
+/* 隐藏新版侧边栏 */
+.bili-dyn-home--member,
+/* 隐藏新版主页容器 */
+#app .bili-layout,
+#app .recommended-container,
+#app .feed-card,
+/* 隐藏新版搜索结果 */
+#app .search-container,
+#app .video-list,
+/* 隐藏番剧播放页新版元素 */
+#app .media-container,
+#app .ep-list {
+    visibility: hidden !important;
+    opacity: 0 !important;
+}
+`;
+
+// 立即注入CSS（添加ID以便旧版页面加载后移除）
+const style = document.createElement('style');
+style.id = 'bilibili-old-preload';
+style.textContent = preloadCSS;
+(document.head || document.documentElement).appendChild(style);
+
 executeScript('index.js');
 /** 会话网络规则集id */
 const SessionRules = new Set<number>();

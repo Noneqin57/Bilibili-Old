@@ -70,7 +70,7 @@ export class CheckBoxs extends HTMLDivElement implements CustomElementsInterface
                     this.checkboxs[d].value = true;
                 } else {
                     this.update(Object.keys(this.checkboxs).concat(d));
-                    this.checkboxs[d].value = true;
+                    (this.checkboxs[d] as CheckBox).value = true;
                 }
             }
         });
@@ -97,12 +97,11 @@ export class CheckBoxs extends HTMLDivElement implements CustomElementsInterface
                 this.checkboxs[d] = checkbox;
             }
         });
-        this.$value.forEach(d => {
-            if (!labels.includes(d)) {
-                this.checkboxs[d]?.remove();
-                const i = this.$value.indexOf(d);
-                i >= 0 && this.$value.splice(i, 1);
-            }
+        const toRemove = this.$value.filter(d => !labels.includes(d));
+        toRemove.forEach(d => {
+            this.checkboxs[d]?.remove();
+            const i = this.$value.indexOf(d);
+            i >= 0 && this.$value.splice(i, 1);
         })
     }
 }

@@ -144,7 +144,7 @@ export class PlayinfoFilter {
         dash.video && this.dashVideo(dash.video, dash.duration); // dash视频部分
         dash.audio && this.dashAudio(dash.audio, dash.duration); // dash音频部分
         dash.dolby && dash.dolby.audio && Array.isArray(dash.dolby.audio) && this.dashAudio(dash.dolby.audio, dash.duration); // 杜比音效部分
-        dash.flac && dash.flac.audio && this.dashAudio([dash.flac.audio], dash.duration, ".flac") // 无损音频部分
+        dash.flac && dash.flac.audio && this.dashAudio([dash.flac.audio], dash.duration, "flac") // 无损音频部分
     }
     /**
      * 整理dash视频部分
@@ -181,7 +181,7 @@ export class PlayinfoFilter {
      * @param duration duration信息，配合bandwidth能计算出文件大小
      * @param fmt 音频拓展名，默认`.m4a`
      */
-    dashAudio(audio: any[], duration: number, fmt = ".m4a") {
+    dashAudio(audio: any[], duration: number, fmt = "m4a") {
         audio.forEach(d => {
             const url: any[] = d.backupUrl || d.backup_url || [];
             (d.baseUrl || d.base_url) && url.unshift(d.baseUrl || d.base_url);

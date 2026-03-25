@@ -234,7 +234,7 @@ export class PlayurlDash {
     message = "";
     no_rexcode = 1;
     quality: IPlayurlQualityNumber = 80;
-    result = "suee";
+    result = "success";
     seek_param = "start";
     seek_type = "offset";
     status = 2;

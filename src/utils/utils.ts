@@ -93,7 +93,7 @@ export async function urlParam(url: string, redirect = true): Promise<UrlParam> 
                         debug.error("appkey", e);
                         try {
                             // BiliPlus接口：含失效视频信息（一般都有备份）
-                            let data = await new apiBiliplusView(aid).getDate();
+                            let data = await new apiBiliplusView(aid).getData();
                             catchs.aid[aid] = data.list || (data.v2_app_api && data.v2_app_api.pages);
                             catchs.aid[aid].forEach((d: any) => d.aid = aid);
                             if (redirect && data.v2_app_api && data.v2_app_api.redirect_url) return urlParam(objUrl(data.v2_app_api.redirect_url, { aid, cid, ssid, epid, p }));
