@@ -209,12 +209,33 @@ export class Header {
     }
     /** 监听新版顶栏 */
     protected hookHeadV2() {
+        // 动态页面模式下，更积极地查找和隐藏新版顶栏
+        if (this.isDynamicMode) {
+            // 立即尝试隐藏已知的新版顶栏选择器
+            const hideNewHeader = () => {
+                const selectors = ['#internationalHeader', '#biliMainHeader', '.bili-header__bar', '.bili-header', 'header.bili-header'];
+                selectors.forEach(sel => {
+                    const el = document.querySelector<HTMLElement>(sel);
+                    if (el && el.style.display !== 'none') {
+                        el.style.display = 'none';
+                        el.hidden = true;
+                    }
+                });
+            };
+            // 立即执行一次
+            hideNewHeader();
+            // 延迟再执行几次，确保动态加载的顶栏也被隐藏
+            setTimeout(hideNewHeader, 100);
+            setTimeout(hideNewHeader, 500);
+            setTimeout(hideNewHeader, 1000);
+        }
         poll(() => {
             return document.querySelector<HTMLElement>('#internationalHeader')
                 || document.querySelector<HTMLElement>('#biliMainHeader')
                 || document.querySelector<HTMLElement>('#bili-header-container')
                 || document.querySelector<HTMLElement>('#home_nav')
                 || document.querySelector<HTMLElement>('.bili-header__bar')
+                || document.querySelector<HTMLElement>('header.bili-header')  // 动态页面顶栏
         }, d => {
             Header.isMiniHead(d) && this.miniHeader();
             this.loadOldHeader(d);
@@ -232,6 +253,8 @@ export class Header {
     protected oldHeadLoaded = false;
     /** 旧版顶栏节点 */
     protected oldHeader = document.createElement('div');
+    /** 是否为动态页面模式（只替换顶栏，不隐藏其他内容） */
+    protected isDynamicMode = false;
     /** 加载旧版顶栏 */
     protected loadOldHeader(target?: HTMLElement) {
         if (target) {
@@ -245,7 +268,14 @@ export class Header {
         }
         if (this.oldHeadLoaded) return;
         this.oldHeadLoaded = true;
-        addCss('#internationalHeader,#biliMainHeader,#bili-header-container{display: none;}');
+        // 动态页面模式下，只隐藏特定的顶栏元素，保留动态内容区域
+        if (!this.isDynamicMode) {
+            addCss('#internationalHeader,#biliMainHeader,#bili-header-container{display: none;}');
+        } else {
+            // 动态页面：隐藏新版顶栏，但保留动态主页容器
+            // 使用更通用的选择器来确保隐藏所有新版顶栏
+            addCss('#internationalHeader,#biliMainHeader,.bili-header__bar,header.bili-header,#bili-header-container .bili-header__bar,.bili-header{display: none !important;}');
+        }
         document.body.insertBefore(this.oldHeader, document.body.firstChild);
         ((<any>window).jQuery ? Promise.resolve() : loadScript("//static.hdslb.com/js/jquery.min.js"))
             .then(() => loadScript("//s1.hdslb.com/bfs/seed/jinkela/header/header.js"))
@@ -263,6 +293,12 @@ export class Header {
                 addCss('.bili-footer {position: relative;}');
                 document.getElementsByClassName('bili-header-m')[1]?.remove();
             })
+    }
+    /** 动态页面专用：只替换顶栏，不影响主内容 */
+    static dynamic() {
+        const header = new Header();
+        header.isDynamicMode = true;
+        return header;
     }
     static fullBannerCover = false;
     /** 顶栏样式修复 */

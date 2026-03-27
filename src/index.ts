@@ -121,7 +121,10 @@ user.addCallback(status => {
     status.disableReport && new ReportObserver();
     status.videoLimit.status && videoLimit.enable();
     status.fullBannerCover && (Header.fullBannerCover = true);
-    status.header && new Header();
+    // 动态页面使用专用的 Header，其他页面使用普通 Header
+    if (status.header) {
+        BLOD.path[2] === 't.bilibili.com' ? Header.dynamic() : new Header();
+    }
     status.comment && new Comment();
     status.webRTC || WebTRC.disable();
     status.album && /t.bilibili.com\/\d+/.test(location.href) && PageSpace.album();
@@ -147,7 +150,6 @@ PageSearch.suggest();
 /bangumi\/media\/md/.test(location.href) && new PageMedia();
 location.href.includes("www.bilibili.com/account/history") && new PageHistory();
 BLOD.path[2] == "live.bilibili.com" && new PageLive();
-BLOD.path[2] == "t.bilibili.com" && new PageDynamic();
 location.href.includes('passport.bilibili.com/login?act=exit') && loginExit();
 
 //////////////////////////// 全局定义 ////////////////////////////

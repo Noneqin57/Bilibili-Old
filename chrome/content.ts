@@ -2,8 +2,14 @@ import { dispatchCustomEvent } from "./utils/dispatchcustomevent";
 import { executeScript } from "./utils/executescript";
 import { insertCSS } from "./utils/insertcss";
 
-// CSS预加载：隐藏新版B站元素，减少页面闪烁
-const preloadCSS = `
+const checkRuntime = () => chrome.runtime?.id != null;
+
+// 动态页面不注入预加载CSS
+if (location.hostname === 't.bilibili.com') {
+    console.log('[Bilibili-Old] 动态页面跳过预加载CSS');
+} else {
+    // CSS预加载：隐藏新版B站元素，减少页面闪烁
+    const preloadCSS = `
 /* 隐藏新版播放器容器 */
 #app .bpx-player-container,
 #app .bpx-player-primary-area,
@@ -12,8 +18,6 @@ const preloadCSS = `
 /* 隐藏新版顶栏 */
 .bili-header__bar,
 .bili-header__channel,
-/* 隐藏新版侧边栏 */
-.bili-dyn-home--member,
 /* 隐藏新版主页容器 */
 #app .bili-layout,
 #app .recommended-container,
@@ -29,11 +33,12 @@ const preloadCSS = `
 }
 `;
 
-// 立即注入CSS（添加ID以便旧版页面加载后移除）
-const style = document.createElement('style');
-style.id = 'bilibili-old-preload';
-style.textContent = preloadCSS;
-(document.head || document.documentElement).appendChild(style);
+    // 立即注入CSS（添加ID以便旧版页面加载后移除）
+    const style = document.createElement('style');
+    style.id = 'bilibili-old-preload';
+    style.textContent = preloadCSS;
+    (document.head || document.documentElement).appendChild(style);
+}
 
 executeScript('index.js');
 /** 会话网络规则集id */
@@ -42,7 +47,7 @@ window.addEventListener(_MUTEX_, ev => {
     if (ev instanceof CustomEvent) {
         switch (ev.detail.data.$type) {
             case 'fetch': {
-                chrome.runtime.sendMessage({
+                checkRuntime() && chrome.runtime.sendMessage({
                     $type: 'fetch',
                     data: ev.detail.data
                 }).then(data => {
@@ -72,7 +77,7 @@ window.addEventListener(_MUTEX_, ev => {
                 break;
             }
             case 'cookie': {
-                chrome.runtime.sendMessage({
+                checkRuntime() && chrome.runtime.sendMessage({
                     $type: 'cookie',
                     data: ev.detail.data.url
                 }).then(data => {
@@ -112,7 +117,7 @@ window.addEventListener(_MUTEX_, ev => {
                 break;
             }
             case 'updateSessionRules': {
-                chrome.runtime.sendMessage({
+                checkRuntime() && chrome.runtime.sendMessage({
                     $type: "updateSessionRules",
                     data: ev.detail.data.rules,
                     tab: ev.detail.data.tab ?? true
@@ -128,7 +133,7 @@ window.addEventListener(_MUTEX_, ev => {
                 break;
             }
             case 'removeSessionRules': {
-                chrome.runtime.sendMessage({
+                checkRuntime() && chrome.runtime.sendMessage({
                     $type: "removeSessionRules",
                     data: ev.detail.data.ids
                 });
@@ -145,8 +150,7 @@ window.addEventListener(_MUTEX_, ev => {
 });
 window.addEventListener("beforeunload", () => {
     const arr = Array.from(SessionRules);
-    // DOM更新时清空已应用规则
-    chrome.runtime.sendMessage({
+    checkRuntime() && chrome.runtime.sendMessage({
         $type: "removeSessionRules",
         data: arr
     });
