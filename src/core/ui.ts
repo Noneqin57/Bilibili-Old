@@ -50,10 +50,10 @@ export class UI {
     protected entry = new BilioldEntry();
     protected interface = new BiliOldInterface();
     protected menuitem: Record<keyof typeof Menus, Menuitem> = <any>{};
-    protected settingItem: Record<keyof typeof userStatus, SettingItem> = <any>{}
+    protected settingItem: Record<keyof typeof userStatus, SettingItem> = <any>{};
+    private settingsInitialized = false;
     constructor() {
         this.initMenu();
-        this.initSettings();
         poll(() => document.readyState === 'complete', () => {
             this.entry.type = user.userStatus!.uiEntryType;
             document.body.appendChild(this.entry);
@@ -712,6 +712,10 @@ export class UI {
      * this.show(<'accessKey'>'accessKey.token') // TypeScript 强制断言
      */
     show(id?: keyof typeof userStatus) {
+        if (!this.settingsInitialized) {
+            this.settingsInitialized = true;
+            this.initSettings();
+        }
         this.interface.show();
         if (id && this.settingItem[id]) {
             this.settingItem[id].dispatchEvent(new Event('show'));

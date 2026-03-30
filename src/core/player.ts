@@ -43,6 +43,7 @@ class Player {
     protected nanoPlayer: any;
     protected connect: any;
     protected isConnect: boolean = false;
+    protected connectResolve?: (value: unknown) => void;
 
     /** 已加载播放器 */
     protected playLoaded = false;
@@ -56,7 +57,7 @@ class Player {
                 debug('新版播放器试图启动！')
                 if (that.isEmbedPlayer) throw new Error('爆破新版播放器！');
                 that.nanoPlayer = createPlayer.call(v, ...arguments);
-                (<any>that).createPlayer(...arguments); // 记录播放器初始化参数
+                (<any>that).createPlayer(...arguments);
                 that.connect = that.nanoPlayer.connect;
                 that.nanoPlayer.connect = function () {
                     if (that.isConnect) {
@@ -64,7 +65,9 @@ class Player {
                         return that.connect?.();
                     } else {
                         that.isConnect = true;
-                        return Promise.resolve(true);
+                        return new Promise(resolve => {
+                            that.connectResolve = resolve;
+                        });
                     }
                 }
                 return that.nanoPlayer;
@@ -178,10 +181,9 @@ class Player {
     }
     /** 不启用旧版播放器允许新版播放器启动 */
     nanoPermit() {
-        // this.loading = false;
         if (this.isConnect) {
             debug('允许新版播放器启动！');
-            this.connect?.()
+            this.connectResolve?.(this.connect?.());
         } else {
             this.isConnect = true;
         }

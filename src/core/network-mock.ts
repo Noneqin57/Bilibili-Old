@@ -2,44 +2,21 @@ import { xhrHook } from "../utils/hook/xhr";
 import { user } from "./user";
 
 let networkMocked = false;
-/**
- * 修改xhr响应
- * @param target 目标XMLHttpRequest
- * @param res GM.xmlHttpRequest响应
- * @param v 目标XMLHttpRequest对应的回调
- */
+
+const responseProperties = ['status', 'statusText', 'response', 'responseText', 'responseXML'];
+
 function defineRes(target: XMLHttpRequest, res: any, v: () => void) {
-    Object.defineProperties(target, {
-        status: {
+    for (const prop of responseProperties) {
+        Object.defineProperty(target, prop, {
             configurable: true,
             writable: true,
-            value: res.status
-        },
-        statusText: {
-            configurable: true,
-            writable: true,
-            value: res.statusText
-        },
-        response: {
-            configurable: true,
-            writable: true,
-            value: res.response
-        },
-        responseText: {
-            configurable: true,
-            writable: true,
-            value: res.responseText
-        },
-        responseXML: {
-            configurable: true,
-            writable: true,
-            value: res.responseXML
-        },
-        responseURL: {
-            configurable: true,
-            writable: true,
-            value: res.finalUrl
-        }
+            value: res[prop]
+        });
+    }
+    Object.defineProperty(target, 'responseURL', {
+        configurable: true,
+        writable: true,
+        value: res.finalUrl
     });
     v();
 }
