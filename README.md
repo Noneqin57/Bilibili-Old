@@ -1,6 +1,7 @@
 ![Windows 11](https://img.shields.io/badge/Microsoft_Windows_11-pass-green.svg?longCache=true) ![Chrome 108](https://img.shields.io/badge/Google_Chrome_108-pass-green.svg?longCache=true) ![Tampermonkey 4.18](https://img.shields.io/badge/Tampermonkey_4.18-pass-green.svg?longCache=true)  ![Manifest V3](https://img.shields.io/badge/Manifest_V3-pass-green.svg?longCache=true)  
 
-> **注意**：本仓库是 [bilibili-old](https://github.com/MotooriKashin/Bilibili-Old) 项目的 Fork 版本。
+> **注意**：本仓库是 [bilibili-old](https://github.com/MotooriKashin/Bilibili-Old) 项目的 Fork，原项目已不再维护，且由于 B 站 API 的持续变更，部分功能可能已经失效或无法完全还原旧版页面。请根据实际情况选择使用。
+
 
 Manifest V3 扩展和 Tampermonkey 用户脚本，恢复 B 站旧版网页，包括小电视播放器。
 
@@ -8,11 +9,10 @@ Manifest V3 扩展和 Tampermonkey 用户脚本，恢复 B 站旧版网页，包
 - 修复了部分分区视频无法显示旧版页面的问题（**注意**：由于 B 站 API 持续变更，此问题无法完全修复，仅针对部分分区有效）。
 
 ### 安装使用
-以下两种方式二选一即可。
-#### 用户脚本
-1. 安装 [Tampermonkey](https://www.tampermonkey.net/) 脚本管理工具。
-2. 到 [GreasyFork](https://greasyfork.org/scripts/394296) 安装脚本。
-3. 打开任意 B 站页面点击页面右下角浮动的齿轮图标调整脚本设置。 *齿轮自动隐藏后，鼠标移动到对应位置会重新浮现*
+
+#### Tampermonkey 用户脚本
+
+本fork版本脚本还未上传tampermonkey，请自行下载安装。
 
 #### 浏览器扩展
 扩展暂时未上架任何扩展商店，请使用【加载已解压的扩展程序】安装。

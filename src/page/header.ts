@@ -255,6 +255,23 @@ export class Header {
     protected oldHeader = document.createElement('div');
     /** 是否为动态页面模式（只替换顶栏，不隐藏其他内容） */
     protected isDynamicMode = false;
+    /** 动态页面专用：隐藏新版顶栏 */
+    hideNewHeaderForDynamic() {
+        const hideNewHeader = () => {
+            const selectors = ['#internationalHeader', '#biliMainHeader', '.bili-header__bar', '.bili-header', 'header.bili-header'];
+            selectors.forEach(sel => {
+                const el = document.querySelector<HTMLElement>(sel);
+                if (el && el.style.display !== 'none') {
+                    el.style.display = 'none';
+                    el.hidden = true;
+                }
+            });
+        };
+        hideNewHeader();
+        setTimeout(hideNewHeader, 100);
+        setTimeout(hideNewHeader, 500);
+        setTimeout(hideNewHeader, 1000);
+    }
     /** 加载旧版顶栏 */
     protected loadOldHeader(target?: HTMLElement) {
         if (target) {
@@ -296,8 +313,11 @@ export class Header {
     }
     /** 动态页面专用：只替换顶栏，不影响主内容 */
     static dynamic() {
+        // 先设置 isDynamicMode，再创建实例，确保构造函数中能正确读取
         const header = new Header();
         header.isDynamicMode = true;
+        // 手动触发动态页面特有的隐藏逻辑
+        header.hideNewHeaderForDynamic();
         return header;
     }
     static fullBannerCover = false;
