@@ -80,8 +80,13 @@ export class PageIndex extends Page {
             });
     }
     protected recommendData() {
-        const fallbackData = JSON.parse(recommendData).list;
-        __INITIAL_STATE__.recommendData = fallbackData;
+        try {
+            const fallbackData = JSON.parse(recommendData).list;
+            __INITIAL_STATE__.recommendData = fallbackData;
+        } catch (e) {
+            debug.error('Failed to parse recommendData:', e);
+            __INITIAL_STATE__.recommendData = [];
+        }
         apiIndexTopRcmd()
             .then(d => {
                 __INITIAL_STATE__.recommendData = d;
