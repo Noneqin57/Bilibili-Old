@@ -44,6 +44,7 @@ export class PageIndex extends Page {
         super(html);
         this.avcheck();
         (<any>window).__INITIAL_STATE__ = __INITIAL_STATE__;
+        this.registerGlobalStubs();
         this.locsData();
         this.recommendData();
         this.roomRecommend();
@@ -55,6 +56,13 @@ export class PageIndex extends Page {
         Header.banner();
         user.userStatus!.timeLine && this.timeLine();
         this.updateDom();
+    }
+    protected registerGlobalStubs() {
+        const stub = () => { };
+        if (!(<any>window).fsrCb) (<any>window).fsrCb = stub;
+        if (!(<any>window).firstVideoCardImgLoaded) (<any>window).firstVideoCardImgLoaded = stub;
+        if (!(<any>window).headerBannerLoaded) (<any>window).headerBannerLoaded = stub;
+        if (!(<any>window).reportfs) (<any>window).reportfs = stub;
     }
     protected locsData() {
         apiWebshowLocs({ ids: [4694, 29, 31, 34, 40, 42, 44] })
@@ -72,10 +80,12 @@ export class PageIndex extends Page {
             });
     }
     protected recommendData() {
+        const fallbackData = JSON.parse(recommendData).list;
+        __INITIAL_STATE__.recommendData = fallbackData;
         apiIndexTopRcmd()
             .then(d => {
+                __INITIAL_STATE__.recommendData = d;
                 if (uid) {
-                    __INITIAL_STATE__.recommendData = d;
                     poll(() => document.querySelector(".rec-btn.prev"), () => {
                         addElement("span", { class: "rec-btn prev" }, undefined, "刷新", undefined,
                             document.querySelector<any>(".rec-btn.prev")).addEventListener("click", () => {

@@ -9319,14 +9319,30 @@ const MODULES = `
   // src/utils/poll.ts
   init_tampermonkey();
   function poll(check, callback, delay = 100, stop = 180) {
-    let timer = setInterval(() => {
+    const result = check();
+    if (result) {
+      callback(result);
+      return;
+    }
+    let timer;
+    let stopped = false;
+    const stopPolling = () => {
+      if (!stopped) {
+        stopped = true;
+        clearInterval(timer);
+      }
+    };
+    timer = setInterval(() => {
+      if (stopped) return;
       const d = check();
       if (d) {
-        clearInterval(timer);
+        stopPolling();
         callback(d);
       }
     }, delay);
-    stop && setTimeout(() => clearInterval(timer), stop * 1e3);
+    if (stop > 0) {
+      setTimeout(stopPolling, stop * 1e3);
+    }
   }
 
   // src/utils/element.ts
@@ -13408,15 +13424,42 @@ const MODULES = `
   // src/core/observer.ts
   init_tampermonkey();
   var nodelist = [];
-  var observe = new MutationObserver(async (d) => d.forEach((d2) => {
-    d2.addedNodes[0] && nodelist.forEach((f) => {
-      try {
-        f(d2.addedNodes[0]);
-      } catch (e) {
-        debug.error("MutationObserver", e);
+  var pendingNodes = [];
+  var isProcessing = false;
+  var BATCH_SIZE = 10;
+  function processNodeQueue() {
+    if (isProcessing || pendingNodes.length === 0) return;
+    isProcessing = true;
+    queueMicrotask(() => {
+      const nodesToProcess = pendingNodes.splice(0, BATCH_SIZE);
+      for (const node of nodesToProcess) {
+        for (const callback of nodelist) {
+          try {
+            callback(node);
+          } catch (e) {
+            debug.error("MutationObserver callback error", e);
+          }
+        }
+      }
+      isProcessing = false;
+      if (pendingNodes.length > 0) {
+        processNodeQueue();
       }
     });
-  }));
+  }
+  var observe = new MutationObserver((mutations) => {
+    let hasNewNodes = false;
+    for (const mutation of mutations) {
+      const addedNode = mutation.addedNodes[0];
+      if (addedNode && addedNode instanceof HTMLElement) {
+        pendingNodes.push(addedNode);
+        hasNewNodes = true;
+      }
+    }
+    if (hasNewNodes && nodelist.length > 0) {
+      processNodeQueue();
+    }
+  });
   observe.observe(document, { childList: true, subtree: true });
   function observerAddedNodes(callback) {
     try {
@@ -13435,7 +13478,7 @@ const MODULES = `
     }
   }
   observerAddedNodes((node) => {
-    if (/video-state-pause/.test(node.className)) {
+    if (/video-state-pause|bpx-player-state-wrap/.test(node.className || "")) {
       switchlist.forEach(async (d) => {
         try {
           d();
@@ -13955,38 +13998,19 @@ const MODULES = `
   // src/core/network-mock.ts
   init_tampermonkey();
   var networkMocked = false;
+  var responseProperties = ["status", "statusText", "response", "responseText", "responseXML"];
   function defineRes(target, res, v) {
-    Object.defineProperties(target, {
-      status: {
+    for (const prop of responseProperties) {
+      Object.defineProperty(target, prop, {
         configurable: true,
         writable: true,
-        value: res.status
-      },
-      statusText: {
-        configurable: true,
-        writable: true,
-        value: res.statusText
-      },
-      response: {
-        configurable: true,
-        writable: true,
-        value: res.response
-      },
-      responseText: {
-        configurable: true,
-        writable: true,
-        value: res.responseText
-      },
-      responseXML: {
-        configurable: true,
-        writable: true,
-        value: res.responseXML
-      },
-      responseURL: {
-        configurable: true,
-        writable: true,
-        value: res.finalUrl
-      }
+        value: res[prop]
+      });
+    }
+    Object.defineProperty(target, "responseURL", {
+      configurable: true,
+      writable: true,
+      value: res.finalUrl
     });
     v();
   }
@@ -24117,8 +24141,24 @@ const MODULES = `
     }
     /** 监听新版顶栏 */
     hookHeadV2() {
+      if (this.isDynamicMode) {
+        const hideNewHeader = () => {
+          const selectors = ["#internationalHeader", "#biliMainHeader", ".bili-header__bar", ".bili-header", "header.bili-header"];
+          selectors.forEach((sel) => {
+            const el = document.querySelector(sel);
+            if (el && el.style.display !== "none") {
+              el.style.display = "none";
+              el.hidden = true;
+            }
+          });
+        };
+        hideNewHeader();
+        setTimeout(hideNewHeader, 100);
+        setTimeout(hideNewHeader, 500);
+        setTimeout(hideNewHeader, 1e3);
+      }
       poll(() => {
-        return document.querySelector("#internationalHeader") || document.querySelector("#biliMainHeader") || document.querySelector("#bili-header-container") || document.querySelector("#home_nav") || document.querySelector(".bili-header__bar");
+        return document.querySelector("#internationalHeader") || document.querySelector("#biliMainHeader") || document.querySelector("#bili-header-container") || document.querySelector("#home_nav") || document.querySelector(".bili-header__bar") || document.querySelector("header.bili-header");
       }, (d) => {
         _Header.isMiniHead(d) && this.miniHeader();
         this.loadOldHeader(d);
@@ -24133,6 +24173,25 @@ const MODULES = `
     oldHeadLoaded = false;
     /** 旧版顶栏节点 */
     oldHeader = document.createElement("div");
+    /** 是否为动态页面模式（只替换顶栏，不隐藏其他内容） */
+    isDynamicMode = false;
+    /** 动态页面专用：隐藏新版顶栏 */
+    hideNewHeaderForDynamic() {
+      const hideNewHeader = () => {
+        const selectors = ["#internationalHeader", "#biliMainHeader", ".bili-header__bar", ".bili-header", "header.bili-header"];
+        selectors.forEach((sel) => {
+          const el = document.querySelector(sel);
+          if (el && el.style.display !== "none") {
+            el.style.display = "none";
+            el.hidden = true;
+          }
+        });
+      };
+      hideNewHeader();
+      setTimeout(hideNewHeader, 100);
+      setTimeout(hideNewHeader, 500);
+      setTimeout(hideNewHeader, 1e3);
+    }
     /** 加载旧版顶栏 */
     loadOldHeader(target) {
       if (target) {
@@ -24145,7 +24204,11 @@ const MODULES = `
       }
       if (this.oldHeadLoaded) return;
       this.oldHeadLoaded = true;
-      addCss("#internationalHeader,#biliMainHeader,#bili-header-container{display: none;}");
+      if (!this.isDynamicMode) {
+        addCss("#internationalHeader,#biliMainHeader,#bili-header-container{display: none;}");
+      } else {
+        addCss("#internationalHeader,#biliMainHeader,.bili-header__bar,header.bili-header,#bili-header-container .bili-header__bar,.bili-header{display: none !important;}");
+      }
       document.body.insertBefore(this.oldHeader, document.body.firstChild);
       (window.jQuery ? Promise.resolve() : loadScript("//static.hdslb.com/js/jquery.min.js")).then(() => loadScript("//s1.hdslb.com/bfs/seed/jinkela/header/header.js")).then(() => {
         _Header.styleFix();
@@ -24162,6 +24225,13 @@ const MODULES = `
         addCss(".bili-footer {position: relative;}");
         (_a3 = document.getElementsByClassName("bili-header-m")[1]) == null ? void 0 : _a3.remove();
       });
+    }
+    /** 动态页面专用：只替换顶栏，不影响主内容 */
+    static dynamic() {
+      const header = new _Header();
+      header.isDynamicMode = true;
+      header.hideNewHeaderForDynamic();
+      return header;
     }
     static fullBannerCover = false;
     /** 顶栏样式修复 */
@@ -25008,29 +25078,6 @@ const MODULES = `
         }
         return setTimeout2.call(self, ...args);
       };
-    }
-  };
-
-  // src/page/dynamic.ts
-  init_tampermonkey();
-  var PageDynamic = class {
-    constructor() {
-      user.addCallback((status) => {
-        status.liveRecord || this.liveRecord();
-      });
-    }
-    liveRecord() {
-      xhrHook("api.bilibili.com/x/polymer/web-dynamic/v1/feed/all", void 0, (r) => {
-        try {
-          const response = jsonCheck(r.response);
-          response.data.items = response.data.items.filter((d) => {
-            var _a3, _b3, _c2, _d, _e;
-            return ((_e = (_d = (_c2 = (_b3 = (_a3 = d.modules) == null ? void 0 : _a3.module_dynamic) == null ? void 0 : _b3.major) == null ? void 0 : _c2.archive) == null ? void 0 : _d.badge) == null ? void 0 : _e.text) != "直播回放";
-          });
-          r.responseType === "json" ? r.response = response : r.response = r.responseText = JSON.stringify(response);
-        } catch (e) {
-        }
-      }, false);
     }
   };
 
@@ -28697,6 +28744,7 @@ const MODULES = `
     nanoPlayer;
     connect;
     isConnect = false;
+    connectResolve;
     /** 已加载播放器 */
     playLoaded = false;
     constructor() {
@@ -28718,7 +28766,9 @@ const MODULES = `
               return (_a4 = that.connect) == null ? void 0 : _a4.call(that);
             } else {
               that.isConnect = true;
-              return Promise.resolve(true);
+              return new Promise((resolve) => {
+                that.connectResolve = resolve;
+              });
             }
           };
           return that.nanoPlayer;
@@ -28873,10 +28923,10 @@ const MODULES = `
     }
     /** 不启用旧版播放器允许新版播放器启动 */
     nanoPermit() {
-      var _a3;
+      var _a3, _b3;
       if (this.isConnect) {
         debug("允许新版播放器启动！");
-        (_a3 = this.connect) == null ? void 0 : _a3.call(this);
+        (_b3 = this.connectResolve) == null ? void 0 : _b3.call(this, (_a3 = this.connect) == null ? void 0 : _a3.call(this));
       } else {
         this.isConnect = true;
       }
@@ -39960,9 +40010,9 @@ const MODULES = `
     interface = new BiliOldInterface();
     menuitem = {};
     settingItem = {};
+    settingsInitialized = false;
     constructor() {
       this.initMenu();
-      this.initSettings();
       poll(() => document.readyState === "complete", () => {
         this.entry.type = user.userStatus.uiEntryType;
         document.body.appendChild(this.entry);
@@ -40619,6 +40669,10 @@ const MODULES = `
      * this.show(<'accessKey'>'accessKey.token') // TypeScript 强制断言
      */
     show(id) {
+      if (!this.settingsInitialized) {
+        this.settingsInitialized = true;
+        this.initSettings();
+      }
       this.interface.show();
       if (id && this.settingItem[id]) {
         this.settingItem[id].dispatchEvent(new Event("show"));
@@ -41086,7 +41140,9 @@ const MODULES = `
     status.disableReport && new ReportObserver();
     status.videoLimit.status && videoLimit.enable();
     status.fullBannerCover && (Header.fullBannerCover = true);
-    status.header && new Header();
+    if (status.header) {
+      BLOD.path[2] === "t.bilibili.com" ? Header.dynamic() : new Header();
+    }
     status.comment && new Comment2();
     status.webRTC || WebTRC.disable();
     status.album && /t.bilibili.com\\/\\d+/.test(location.href) && PageSpace.album();
@@ -41110,7 +41166,6 @@ const MODULES = `
   /bangumi\\/media\\/md/.test(location.href) && new PageMedia();
   location.href.includes("www.bilibili.com/account/history") && new PageHistory();
   BLOD.path[2] == "live.bilibili.com" && new PageLive();
-  BLOD.path[2] == "t.bilibili.com" && new PageDynamic();
   location.href.includes("passport.bilibili.com/login?act=exit") && loginExit();
 })();
 // @license MIT
