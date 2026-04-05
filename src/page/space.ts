@@ -152,7 +152,7 @@ export class PageSpace {
                         }, 100);
                     });
                 }
-            } catch { }
+            } catch (e) { /* 失效视频修复处理异常 */ }
         }, false);
     }
 

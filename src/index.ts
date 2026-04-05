@@ -37,7 +37,7 @@ import { PageDocumentary } from './page/channel/documentary';
 import { PageChannel } from './page/channel/channel';
 import { loginExit } from './page/logout';
 
-try { document.domain = 'bilibili.com'; } catch { }
+try { document.domain = 'bilibili.com'; } catch (e) { /* 跨域 domain 设置在非兼容环境下预期失败 */ }
 
 // 提取版本哈希（仅限用户脚本）
 BLOD.version = GM.info?.script?.version?.slice(-40);

@@ -102,7 +102,7 @@ export class PagePlaylist extends Page {
             jsonpHook("api.bilibili.com/x/web-interface/elec/show", undefined, res => {
                 try {
                     res.data.av_list = [];
-                } catch { }
+                } catch (e) { /* res.data 可能不存在 av_list 字段 */ }
                 return res;
             }, false)
         } else {

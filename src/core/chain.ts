@@ -36,6 +36,6 @@ export const Chain = new (class {
                 key = <any>arr.shift();
             }
             target[key] = value;
-        } catch { }
+        } catch (e) { /* 深层属性赋值可能因中间路径不存在而失败 */ }
     }
 })();

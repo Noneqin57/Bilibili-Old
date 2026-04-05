@@ -20,6 +20,8 @@ import { localStorage } from "./storage";
 import { toast } from "./toast";
 import { alert } from "./ui/alert";
 import { user } from "./user";
+import { handleError, ErrorLevel } from "../utils/error";
+import { PlayerRecovery } from "./player-recovery";
 
 const danmakuProtect = [
     // 96048, // 【幸运星组曲】「らき☆すた動画」
@@ -47,6 +49,8 @@ class Player {
 
     /** 已加载播放器 */
     protected playLoaded = false;
+    /** 播放器恢复/重连模块 */
+    protected recovery = new PlayerRecovery();
     constructor() {
         // 3.x播放器
         propertyHook.modify(window, 'nano', (v: any) => {
@@ -143,7 +147,9 @@ class Player {
                 debug('爆破新版播放器!');
                 (<any>window).player.disconnect();
                 this.nanoPlayer || (this.nanoPlayer = (<any>window).player);
-            } catch { }
+            } catch (e) {
+                handleError(e, 'Player', ErrorLevel.SILENT, 'disconnect 新版播放器失败，可能已无实例');
+            }
         }
         this.switchVideo();
         this.simpleChinese();
@@ -175,9 +181,34 @@ class Player {
                     isInitialized: { value: () => true }
                 })
             }
+            this.startRecovery();
         });
         // 修正播放器样式
         addCss(`#bofqi .player,#bilibili-player .player{width: 100%;height: 100%;display: block;}.bilibili-player .bilibili-player-auxiliary-area{z-index: 1;}`, 'nano-fix');
+    }
+    /** 启动播放器恢复监控 */
+    protected startRecovery() {
+        this.recovery.onCrash(() => {
+            debug('PlayerRecovery', '播放器崩溃，尝试回滚到原生播放器');
+            this.nanoPermit();
+        });
+        const tryWatchVideo = () => {
+            const video = document.querySelector<HTMLVideoElement>('#bilibiliPlayer video') ?? document.querySelector<HTMLVideoElement>('#bofqi video');
+            if (video) {
+                this.recovery.watch(video);
+                return true;
+            }
+            return false;
+        };
+        if (!tryWatchVideo()) {
+            poll(() => document.querySelector('#bilibiliPlayer video') || document.querySelector('#bofqi video'), () => {
+                if (tryWatchVideo()) {
+                    debug('PlayerRecovery', '成功绑定视频元素监控');
+                }
+            }, 500, 10000);
+        } else {
+            debug('PlayerRecovery', '立即绑定视频元素监控');
+        }
     }
     /** 不启用旧版播放器允许新版播放器启动 */
     nanoPermit() {
@@ -329,7 +360,9 @@ class Player {
                             }
                         })
                     }
-                } catch { }
+                } catch (e) {
+                    handleError(e, 'Player', ErrorLevel.WARN, '字幕繁简转换失败');
+                }
             }, false);
         }
     }
@@ -382,6 +415,8 @@ class Player {
     }
     /** 正在更新播放器 */
     protected updating = false;
+    /** 播放器加载超时时间(ms) */
+    protected static readonly LOAD_TIMEOUT = 15000;
     /**
      * 加载播放器
      * @param force 强制更新
@@ -403,27 +438,38 @@ class Player {
                             '> 如果弹出跨域提醒，推荐【总是允许全部域名】',
                             '> 如果多次更新失败，请禁用【重构播放器】功能！');
                         let i = 1;
+                        const fetchWithTimeout = <T>(promise: Promise<T>, label: string, timeout?: number): Promise<T> => {
+                            const ms = timeout ?? Player.LOAD_TIMEOUT;
+                            return Promise.race([
+                                promise,
+                                new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`${label} 加载超时 (${ms / 1000}s)`)), ms))
+                            ]);
+                        };
                         await Promise.all([
-                            GM.fetch(cdn.encode('/chrome/player/video.js'))
-                                .then(d => d.text())
-                                .then(d => {
-                                    data[0] = d;
-                                    msg.push(`> 加载播放器组件：${i++}/2`);
-                                })
-                                .catch(e => {
-                                    msg.push(`> 获取播放器组件出错！${i++}/2`, e);
-                                    msg.type = 'error';
-                                }),
-                            GM.fetch(cdn.encode('/chrome/player/video.css'))
-                                .then(d => d.text())
-                                .then(d => {
-                                    data[1] = d;
-                                    msg.push(`> 加载播放器组件：${i++}/2`);
-                                })
-                                .catch(e => {
-                                    msg.push(`> 获取播放器组件出错！${i++}/2`, e);
-                                    msg.type = 'error';
-                                })
+                            fetchWithTimeout(
+                                GM.fetch(cdn.encode('/chrome/player/video.js'))
+                                    .then(d => d.text())
+                                    .then(d => {
+                                        data[0] = d;
+                                        msg.push(`> 加载播放器组件：${i++}/2`);
+                                    }),
+                                'video.js'
+                            ).catch(e => {
+                                msg.push(`> 获取 video.js 出错！${i++}/2`, e instanceof Error ? e.message : e);
+                                msg.type = 'error';
+                            }),
+                            fetchWithTimeout(
+                                GM.fetch(cdn.encode('/chrome/player/video.css'))
+                                    .then(d => d.text())
+                                    .then(d => {
+                                        data[1] = d;
+                                        msg.push(`> 加载播放器组件：${i++}/2`);
+                                    }),
+                                'video.css'
+                            ).catch(e => {
+                                msg.push(`> 获取 video.css 出错！${i++}/2`, e instanceof Error ? e.message : e);
+                                msg.type = 'error';
+                            })
                         ]);
                         this.updating = false;
                         msg.delay = user.userStatus!.toast.delay;
@@ -452,7 +498,8 @@ class Player {
                 addCss('.bilibili-player-video-progress-detail-img {transform: scale(0.333333);transform-origin: 0px 0px;}', 'detail-img');
             }
         } catch (e) {
-            this.updating || toast.error('播放器加载失败！', '已回滚~', e)();
+            handleError(e, 'Player', ErrorLevel.ERROR, '播放器加载失败');
+            this.updating = false;
             await loadScript(URLS.VIDEO);
             addCss('.bilibili-player-video-progress-detail-img {transform: scale(0.333333);transform-origin: 0px 0px;}', 'detail-img');
         }

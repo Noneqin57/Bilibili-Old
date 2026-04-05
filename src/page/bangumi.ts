@@ -569,7 +569,7 @@ export class PageBangumi extends Page {
                 try {
                     const result = typeof res.response === 'string' ? jsonCheck(res.response) : res.response;
                     this.like.likes = result.result.likes;
-                } catch { }
+                } catch (e) { /* likes 字段可能不存在 */ }
             });
             switchVideo(() => {
                 this.like.init();

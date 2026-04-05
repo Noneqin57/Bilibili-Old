@@ -23,10 +23,10 @@ export function toObject(input: string): any {
                     if (String(temp) !== 'NaN' && !input.startsWith('0')) {
                         input = <any>temp;
                     }
-                } catch { }
+                } catch (e) { /* 非数字字符串转 Number 可能失败 */ }
                 try {
                     if (/^\d+n$/.test(input)) input = <any>BigInt(input.slice(0, -1))
-                } catch { }
+                } catch (e) { /* BigInt 转换可能溢出 */ }
             }
             break;
     }
@@ -48,7 +48,7 @@ export function toString(input: unknown, space = '\n') {
         try {
             const str = JSON.stringify(input, undefined, space);
             str === '{}' || (result = str)
-        } catch { }
+        } catch (e) { /* JSON.stringify 可能对循环引用等抛出 */ }
     }
     return result;
 }

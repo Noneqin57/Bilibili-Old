@@ -19,7 +19,7 @@ export function offset(node: HTMLElement) {
         let rect: DOMRect = <any>undefined;
         try {
             rect = node.getBoundingClientRect();
-        } catch { }
+        } catch (e) { /* getBoundingClientRect 在离 DOM 节点上可能失败 */ }
         if (!rect || !onwer.documentElement.contains(node)) {
             rect && (result.top = rect.top, result.left = rect.left);
             return result;

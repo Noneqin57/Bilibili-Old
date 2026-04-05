@@ -53,7 +53,7 @@ export function xhrHook(url: string | string[], modifyOpen?: (args: XMLHttpReque
                                 response.responseText = typeof response.response === 'object' ? JSON.stringify(response.response) : response.response;
                                 Reflect.defineProperty(this, "responseText", { configurable: true, value: response.responseText });
                             }
-                        } catch { }
+                        } catch (e) { /* Reflect.defineProperty 在某些只读属性上会抛出 */ }
                     }
                 } catch (e) { debug.error("modifyResponse of xhrhook", one, e) }
             })
