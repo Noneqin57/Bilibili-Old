@@ -9225,6 +9225,10 @@ const MODULES = `
       /** 记忆播放速率 */
       videospeed: false
     },
+    /** 控制栏倍速按钮 */
+    playbackRateBtn: true,
+    /** 长按方向键倍速 */
+    playbackRateKey: true,
     /** 关闭抗锯齿 */
     videoDisableAA: false,
     /** 禁用直播间挂机检测 */
@@ -28955,6 +28959,262 @@ const MODULES = `
     }
   };
 
+  // src/core/player/playback-rate.ts
+  init_tampermonkey();
+  var RATE_PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+  var LONG_PRESS_DELAY = 300;
+  var PlaybackRateController = class {
+    /** 当前倍速 */
+    currentRate = 1;
+    /** 临时倍速前的倍速 */
+    previousRate = 1;
+    /** 是否处于临时倍速状态 */
+    isTemporary = false;
+    /** 倍速按钮元素 */
+    rateButton;
+    /** 下拉菜单元素 */
+    rateMenu;
+    /** 键盘长按定时器 */
+    keyTimer;
+    /** 当前按下的键 */
+    pressedKey;
+    /** 是否已销毁 */
+    destroyed = false;
+    /** 是否启用控制栏按钮 */
+    enableButton;
+    /** 是否启用键盘长按 */
+    enableKey;
+    constructor(enableButton = true, enableKey = true) {
+      this.enableButton = enableButton;
+      this.enableKey = enableKey;
+      this.init();
+    }
+    /** 初始化 */
+    init() {
+      if (this.enableButton) {
+        poll(() => this.findControlBar(), (controlBar) => {
+          if (this.destroyed) return;
+          this.createRateButton(controlBar);
+        }, 500, 3e4);
+      }
+      if (this.enableKey) {
+        this.bindKeyboardEvents();
+      }
+    }
+    /** 查找播放器控制栏 */
+    findControlBar() {
+      const player2 = document.querySelector("#bilibiliPlayer") || document.querySelector("#bofqi");
+      if (!player2) return null;
+      const controlBar = player2.querySelector(".bilibili-player-video-control-bottom") || player2.querySelector(".bilibili-player-video-control-wrap") || player2.querySelector(".bilibili-player-video-sendbar");
+      return controlBar;
+    }
+    /** 创建倍速按钮 */
+    createRateButton(controlBar) {
+      if (controlBar.querySelector(".blod-playback-rate-btn")) return;
+      this.rateButton = document.createElement("div");
+      this.rateButton.className = "blod-playback-rate-btn";
+      this.rateButton.textContent = "1.0x";
+      this.rateButton.title = "播放倍速";
+      this.rateButton.style.cssText = \`
+            display: inline-block;
+            padding: 0 8px;
+            height: 28px;
+            line-height: 28px;
+            color: #fff;
+            font-size: 12px;
+            cursor: pointer;
+            user-select: none;
+            border-radius: 2px;
+            transition: background-color 0.2s;
+        \`;
+      this.rateButton.addEventListener("mouseenter", () => {
+        this.rateButton && (this.rateButton.style.backgroundColor = "rgba(255,255,255,0.2)");
+      });
+      this.rateButton.addEventListener("mouseleave", () => {
+        this.rateButton && (this.rateButton.style.backgroundColor = "transparent");
+      });
+      this.rateButton.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this.toggleMenu();
+      });
+      const rightArea = controlBar.querySelector(".bilibili-player-video-btn-setting") || controlBar.lastElementChild;
+      if (rightArea && rightArea.parentNode) {
+        rightArea.parentNode.insertBefore(this.rateButton, rightArea);
+      } else {
+        controlBar.appendChild(this.rateButton);
+      }
+      this.createRateMenu();
+    }
+    /** 创建下拉菜单 */
+    createRateMenu() {
+      this.rateMenu = document.createElement("div");
+      this.rateMenu.className = "blod-playback-rate-menu";
+      this.rateMenu.style.cssText = \`
+            position: absolute;
+            bottom: 40px;
+            right: 10px;
+            background: rgba(33, 33, 33, 0.9);
+            border-radius: 4px;
+            padding: 4px 0;
+            min-width: 80px;
+            display: none;
+            z-index: 1000;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        \`;
+      RATE_PRESETS.forEach((rate) => {
+        const item = document.createElement("div");
+        item.className = "blod-playback-rate-item";
+        item.textContent = rate.toFixed(2).replace(/\\.00\$/, ".0").replace(/\\.0\$/, "") + "x";
+        item.dataset.rate = String(rate);
+        item.style.cssText = \`
+                padding: 6px 16px;
+                color: #fff;
+                font-size: 12px;
+                cursor: pointer;
+                transition: background-color 0.2s;
+                text-align: center;
+            \`;
+        item.addEventListener("mouseenter", () => {
+          item.style.backgroundColor = "rgba(255,255,255,0.1)";
+        });
+        item.addEventListener("mouseleave", () => {
+          item.style.backgroundColor = "transparent";
+        });
+        item.addEventListener("click", (e) => {
+          e.stopPropagation();
+          this.setRate(rate);
+          this.hideMenu();
+        });
+        this.rateMenu.appendChild(item);
+      });
+      const player2 = document.querySelector("#bilibiliPlayer") || document.querySelector("#bofqi");
+      if (player2) {
+        player2.style.position = "relative";
+        player2.appendChild(this.rateMenu);
+      }
+      document.addEventListener("click", () => this.hideMenu());
+    }
+    /** 切换菜单显示 */
+    toggleMenu() {
+      if (!this.rateMenu) return;
+      const isVisible = this.rateMenu.style.display === "block";
+      if (isVisible) {
+        this.hideMenu();
+      } else {
+        this.showMenu();
+      }
+    }
+    /** 显示菜单 */
+    showMenu() {
+      if (!this.rateMenu) return;
+      const items = this.rateMenu.querySelectorAll(".blod-playback-rate-item");
+      items.forEach((item) => {
+        const rate = parseFloat(item.dataset.rate || "1");
+        if (Math.abs(rate - this.currentRate) < 0.01) {
+          item.style.color = "#00a1d6";
+        } else {
+          item.style.color = "#fff";
+        }
+      });
+      this.rateMenu.style.display = "block";
+    }
+    /** 隐藏菜单 */
+    hideMenu() {
+      if (!this.rateMenu) return;
+      this.rateMenu.style.display = "none";
+    }
+    /** 绑定键盘事件 */
+    bindKeyboardEvents() {
+      document.addEventListener("keydown", this.handleKeyDown);
+      document.addEventListener("keyup", this.handleKeyUp);
+    }
+    /** 键盘按下处理 */
+    handleKeyDown = (e) => {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      if (this.pressedKey) return;
+      this.pressedKey = e.key;
+      this.keyTimer = window.setTimeout(() => {
+        const video = this.getVideoElement();
+        if (video && !video.paused && this.currentRate < 2) {
+          this.setTemporaryRate(2);
+        }
+      }, LONG_PRESS_DELAY);
+    };
+    /** 键盘释放处理 */
+    handleKeyUp = (e) => {
+      if (e.key !== this.pressedKey) return;
+      if (this.keyTimer) {
+        clearTimeout(this.keyTimer);
+        this.keyTimer = void 0;
+      }
+      this.pressedKey = void 0;
+      if (this.isTemporary) {
+        this.restoreRate();
+      }
+    };
+    /** 获取视频元素 */
+    getVideoElement() {
+      return document.querySelector("#bilibiliPlayer video") || document.querySelector("#bofqi video");
+    }
+    /** 设置倍速 */
+    setRate(rate) {
+      const video = this.getVideoElement();
+      if (!video) {
+        toast.warning("未找到播放器！");
+        return;
+      }
+      this.currentRate = rate;
+      this.isTemporary = false;
+      video.playbackRate = rate;
+      if (this.rateButton) {
+        this.rateButton.textContent = rate.toFixed(2).replace(/\\.00\$/, ".0").replace(/\\.0\$/, "") + "x";
+      }
+      debug("PlaybackRate", \`倍速已设置为 \${rate}x\`);
+    }
+    /** 获取当前倍速 */
+    getRate() {
+      return this.currentRate;
+    }
+    /** 设置临时倍速 */
+    setTemporaryRate(rate) {
+      if (this.isTemporary) return;
+      const video = this.getVideoElement();
+      if (!video) return;
+      this.previousRate = this.currentRate;
+      this.isTemporary = true;
+      video.playbackRate = rate;
+      if (this.rateButton) {
+        this.rateButton.textContent = rate.toFixed(1) + "x";
+        this.rateButton.style.color = "#00a1d6";
+      }
+      debug("PlaybackRate", \`临时倍速 \${rate}x\`);
+    }
+    /** 恢复倍速 */
+    restoreRate() {
+      if (!this.isTemporary) return;
+      this.isTemporary = false;
+      this.setRate(this.previousRate);
+      if (this.rateButton) {
+        this.rateButton.style.color = "#fff";
+      }
+      debug("PlaybackRate", \`恢复倍速 \${this.previousRate}x\`);
+    }
+    /** 销毁 */
+    destroy() {
+      var _a3, _b3;
+      this.destroyed = true;
+      if (this.keyTimer) {
+        clearTimeout(this.keyTimer);
+      }
+      document.removeEventListener("keydown", this.handleKeyDown);
+      document.removeEventListener("keyup", this.handleKeyUp);
+      (_a3 = this.rateButton) == null ? void 0 : _a3.remove();
+      (_b3 = this.rateMenu) == null ? void 0 : _b3.remove();
+      this.rateButton = void 0;
+      this.rateMenu = void 0;
+    }
+  };
+
   // src/core/player.ts
   var danmakuProtect = [
     // 96048, // 【幸运星组曲】「らき☆すた動画」
@@ -28987,6 +29247,8 @@ const MODULES = `
     playLoaded = false;
     /** 播放器恢复/重连模块 */
     recovery = new PlayerRecovery();
+    /** 倍速控制器 */
+    playbackRateController;
     constructor() {
       propertyHook.modify(window, "nano", (v) => {
         var _a3;
@@ -29160,8 +29422,58 @@ const MODULES = `
           });
         }
         this.startRecovery();
+        if (user.userStatus.playbackRateBtn || user.userStatus.playbackRateKey) {
+          this.playbackRateController = new PlaybackRateController(
+            user.userStatus.playbackRateBtn,
+            user.userStatus.playbackRateKey
+          );
+        }
       });
       addCss(\`#bofqi .player,#bilibili-player .player{width: 100%;height: 100%;display: block;}.bilibili-player .bilibili-player-auxiliary-area{z-index: 1;}\`, "nano-fix");
+      addCss(\`
+            .blod-playback-rate-btn {
+                display: inline-flex !important;
+                align-items: center;
+                justify-content: center;
+                padding: 0 8px;
+                height: 28px;
+                color: #fff;
+                font-size: 12px;
+                cursor: pointer;
+                user-select: none;
+                border-radius: 2px;
+                transition: background-color 0.2s;
+                vertical-align: top;
+            }
+            .blod-playback-rate-btn:hover {
+                background-color: rgba(255,255,255,0.2);
+            }
+            .blod-playback-rate-menu {
+                position: absolute;
+                bottom: 40px;
+                background: rgba(33, 33, 33, 0.95);
+                border-radius: 4px;
+                padding: 4px 0;
+                min-width: 80px;
+                display: none;
+                z-index: 1000;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            }
+            .blod-playback-rate-item {
+                padding: 6px 16px;
+                color: #fff;
+                font-size: 12px;
+                cursor: pointer;
+                transition: background-color 0.2s;
+                text-align: center;
+            }
+            .blod-playback-rate-item:hover {
+                background-color: rgba(255,255,255,0.1);
+            }
+            .blod-playback-rate-item.active {
+                color: #00a1d6;
+            }
+        \`, "playback-rate");
     }
     /** 启动播放器恢复监控 */
     startRecovery() {
@@ -29295,9 +29607,11 @@ const MODULES = `
     playbackRate(playbackRate = 1) {
       clearTimeout(this.playbackRateTimer);
       this.playbackRateTimer = setTimeout(() => {
+        var _a3;
         const video = document.querySelector("#bilibiliPlayer video");
         if (!video) return toast.warning("未找到播放器！请在播放页面使用。");
         video.playbackRate = Number(playbackRate);
+        (_a3 = this.playbackRateController) == null ? void 0 : _a3.setRate(Number(playbackRate));
       }, 100);
     }
     /** 繁体字幕转简体 */
@@ -39215,7 +39529,10 @@ const MODULES = `
             return (_a3 = document.querySelector("#bofqi")) == null ? void 0 : _a3.querySelector("video");
           }, (d) => {
             d.addEventListener("ratechange", (e) => {
-              GM.setValue("videospeed", e.target.playbackRate || 1);
+              var _a3;
+              const rate = e.target.playbackRate || 1;
+              GM.setValue("videospeed", rate);
+              (_a3 = player.playbackRateController) == null ? void 0 : _a3.setRate(rate);
             });
           });
         });
@@ -40521,7 +40838,9 @@ const MODULES = `
         this.switch("elecShow", "充电鸣谢", "允许视频结尾的充电鸣谢"),
         this.switch("videoDisableAA", "禁用视频渲染抗锯齿", '详见<a href="https://github.com/MotooriKashin/Bilibili-Old/issues/292" target="_blank">#292</a>说明'),
         this.switch("ugcSection", "视频合集", "以播单形式呈现", void 0, void 0, "视频合集在旧版页面时代本不存在，但其实质类似于上古的播单，所以直接使用播单页面进行模拟。值得一提的是真正的播单页面相关接口已完全被404，如果有幸访问到脚本会直接替换为缓存的播单号769——因为只缓存了这一项数据。另外播单详情页面还是404状态，以后可能也会用缓存数据修复，让后人能一窥范例。"),
-        this.switch("heartbeatBlock", "无痕模式", "禁用视频心跳", void 0, void 0, "禁用视频心跳便不会产生播放器历史记录。鉴于B站网页端开始严重限制未登录用户的权限，比如弹幕减少，评论只能看第一页等。可以启用本功能模拟【无痕模式】来使用，享受已登录用户的权限但B站不会知道你看了什么视频。<br/>※ 刷新页面生效")
+        this.switch("heartbeatBlock", "无痕模式", "禁用视频心跳", void 0, void 0, "禁用视频心跳便不会产生播放器历史记录。鉴于B站网页端开始严重限制未登录用户的权限，比如弹幕减少，评论只能看第一页等。可以启用本功能模拟【无痕模式】来使用，享受已登录用户的权限但B站不会知道你看了什么视频。<br/>※ 刷新页面生效"),
+        this.switch("playbackRateBtn", "控制栏倍速按钮", "在播放器控制栏显示倍速下拉菜单", void 0, void 0, "在播放器控制栏右侧添加倍速按钮，点击可快速切换常用倍速档位。"),
+        this.switch("playbackRateKey", "长按方向键倍速", "长按左右方向键临时2倍速播放", void 0, void 0, "播放视频时长按左右方向键，视频将临时以2倍速播放，松开后恢复原倍速。")
       ]);
       this.menuitem.player.addCard("自动化操作");
       this.menuitem.player.addSetting([

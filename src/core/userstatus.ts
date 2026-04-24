@@ -101,6 +101,10 @@ export const userStatus = {
         /** 记忆播放速率 */
         videospeed: false
     },
+    /** 控制栏倍速按钮 */
+    playbackRateBtn: true,
+    /** 长按方向键倍速 */
+    playbackRateKey: true,
     /** 关闭抗锯齿 */
     videoDisableAA: false,
     /** 禁用直播间挂机检测 */

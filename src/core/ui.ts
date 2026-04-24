@@ -277,7 +277,9 @@ export class UI {
             this.switch('elecShow', '充电鸣谢', '允许视频结尾的充电鸣谢'),
             this.switch('videoDisableAA', '禁用视频渲染抗锯齿', '详见<a href="https://github.com/MotooriKashin/Bilibili-Old/issues/292" target="_blank">#292</a>说明'),
             this.switch('ugcSection', '视频合集', '以播单形式呈现', undefined, undefined, '视频合集在旧版页面时代本不存在，但其实质类似于上古的播单，所以直接使用播单页面进行模拟。值得一提的是真正的播单页面相关接口已完全被404，如果有幸访问到脚本会直接替换为缓存的播单号769——因为只缓存了这一项数据。另外播单详情页面还是404状态，以后可能也会用缓存数据修复，让后人能一窥范例。'),
-            this.switch('heartbeatBlock', '无痕模式', '禁用视频心跳', undefined, undefined, '禁用视频心跳便不会产生播放器历史记录。鉴于B站网页端开始严重限制未登录用户的权限，比如弹幕减少，评论只能看第一页等。可以启用本功能模拟【无痕模式】来使用，享受已登录用户的权限但B站不会知道你看了什么视频。<br/>※ 刷新页面生效')
+            this.switch('heartbeatBlock', '无痕模式', '禁用视频心跳', undefined, undefined, '禁用视频心跳便不会产生播放器历史记录。鉴于B站网页端开始严重限制未登录用户的权限，比如弹幕减少，评论只能看第一页等。可以启用本功能模拟【无痕模式】来使用，享受已登录用户的权限但B站不会知道你看了什么视频。<br/>※ 刷新页面生效'),
+            this.switch('playbackRateBtn', '控制栏倍速按钮', '在播放器控制栏显示倍速下拉菜单', undefined, undefined, '在播放器控制栏右侧添加倍速按钮，点击可快速切换常用倍速档位。'),
+            this.switch('playbackRateKey', '长按方向键倍速', '长按左右方向键临时2倍速播放', undefined, undefined, '播放视频时长按左右方向键，视频将临时以2倍速播放，松开后恢复原倍速。')
         ]);
         this.menuitem.player.addCard('自动化操作');
         this.menuitem.player.addSetting([

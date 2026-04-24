@@ -22,6 +22,7 @@ import { alert } from "./ui/alert";
 import { user } from "./user";
 import { handleError, ErrorLevel } from "../utils/error";
 import { PlayerRecovery } from "./player-recovery";
+import { PlaybackRateController } from "./player/playback-rate";
 
 const danmakuProtect = [
     // 96048, // 【幸运星组曲】「らき☆すた動画」
@@ -51,6 +52,8 @@ class Player {
     protected playLoaded = false;
     /** 播放器恢复/重连模块 */
     protected recovery = new PlayerRecovery();
+    /** 倍速控制器 */
+    protected playbackRateController?: PlaybackRateController;
     constructor() {
         // 3.x播放器
         propertyHook.modify(window, 'nano', (v: any) => {
@@ -182,9 +185,61 @@ class Player {
                 })
             }
             this.startRecovery();
+            // 初始化倍速控制器
+            if (user.userStatus!.playbackRateBtn || user.userStatus!.playbackRateKey) {
+                this.playbackRateController = new PlaybackRateController(
+                    user.userStatus!.playbackRateBtn,
+                    user.userStatus!.playbackRateKey
+                );
+            }
         });
         // 修正播放器样式
         addCss(`#bofqi .player,#bilibili-player .player{width: 100%;height: 100%;display: block;}.bilibili-player .bilibili-player-auxiliary-area{z-index: 1;}`, 'nano-fix');
+        // 注入倍速按钮样式
+        addCss(`
+            .blod-playback-rate-btn {
+                display: inline-flex !important;
+                align-items: center;
+                justify-content: center;
+                padding: 0 8px;
+                height: 28px;
+                color: #fff;
+                font-size: 12px;
+                cursor: pointer;
+                user-select: none;
+                border-radius: 2px;
+                transition: background-color 0.2s;
+                vertical-align: top;
+            }
+            .blod-playback-rate-btn:hover {
+                background-color: rgba(255,255,255,0.2);
+            }
+            .blod-playback-rate-menu {
+                position: absolute;
+                bottom: 40px;
+                background: rgba(33, 33, 33, 0.95);
+                border-radius: 4px;
+                padding: 4px 0;
+                min-width: 80px;
+                display: none;
+                z-index: 1000;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            }
+            .blod-playback-rate-item {
+                padding: 6px 16px;
+                color: #fff;
+                font-size: 12px;
+                cursor: pointer;
+                transition: background-color 0.2s;
+                text-align: center;
+            }
+            .blod-playback-rate-item:hover {
+                background-color: rgba(255,255,255,0.1);
+            }
+            .blod-playback-rate-item.active {
+                color: #00a1d6;
+            }
+        `, 'playback-rate');
     }
     /** 启动播放器恢复监控 */
     protected startRecovery() {
@@ -323,7 +378,9 @@ class Player {
         this.playbackRateTimer = setTimeout(() => {
             const video = document.querySelector<HTMLVideoElement>('#bilibiliPlayer video');
             if (!video) return toast.warning('未找到播放器！请在播放页面使用。');
-            video.playbackRate = Number(playbackRate)
+            video.playbackRate = Number(playbackRate);
+            // 同步倍速控制器状态
+            this.playbackRateController?.setRate(Number(playbackRate));
         }, 100);
     }
     /** 繁体字幕转简体 */

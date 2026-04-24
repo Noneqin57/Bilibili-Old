@@ -49,7 +49,10 @@ export class Automate {
             switchVideo(() => {
                 poll(() => document.querySelector("#bofqi")?.querySelector<HTMLVideoElement>("video"), d => {
                     d.addEventListener("ratechange", e => {
-                        GM.setValue("videospeed", (<HTMLVideoElement>e.target).playbackRate || 1);
+                        const rate = (<HTMLVideoElement>e.target).playbackRate || 1;
+                        GM.setValue("videospeed", rate);
+                        // 同步倍速控制器显示
+                        (<any>player).playbackRateController?.setRate(rate);
                     });
                 })
             })
