@@ -42,12 +42,8 @@ const channelTitle: Record<string, string> = {
 export class PageChannel extends Page {
     constructor() {
         super(htmlChannel);
+        this.registerGlobalStubs();
         const name = BLOD.path[4];
-        // 旧版jinkela JS通过URL解析频道，需要将/c/改为/v/
-        if (name && location.pathname.includes('/c/')) {
-            urlCleaner.updateLocation(location.href.replace(new RegExp(`/c/${name}/?`), `/v/${name}/`));
-        }
-        // 设置页面标题
         if (name && channelTitle[name]) {
             document.title = `${channelTitle[name]} - 哔哩哔哩 (゜-゜)つロ 干杯~-bilibili`;
         }
@@ -55,8 +51,18 @@ export class PageChannel extends Page {
         Header.primaryMenu();
         Header.banner();
         this.updateDom();
+        if (name && location.pathname.includes('/c/')) {
+            urlCleaner.updateLocation(location.href.replace(new RegExp(`/c/${name}/?`), `/v/${name}/`));
+        }
         this.sliderData();
         this.checkChannelLoad();
+    }
+    private registerGlobalStubs() {
+        const stub = () => { };
+        if (!(<any>window).fsrCb) (<any>window).fsrCb = stub;
+        if (!(<any>window).firstVideoCardImgLoaded) (<any>window).firstVideoCardImgLoaded = stub;
+        if (!(<any>window).headerBannerLoaded) (<any>window).headerBannerLoaded = stub;
+        if (!(<any>window).reportfs) (<any>window).reportfs = stub;
     }
     /** 设置频道页所需的window全局变量 */
     private setChannelWindow() {

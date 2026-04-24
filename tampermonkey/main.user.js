@@ -8249,7 +8249,7 @@ const MODULES = `
                   response.responseText = typeof response.response === "object" ? JSON.stringify(response.response) : response.response;
                   Reflect.defineProperty(this, "responseText", { configurable: true, value: response.responseText });
                 }
-              } catch {
+              } catch (e) {
               }
             }
           } catch (e) {
@@ -8769,11 +8769,11 @@ const MODULES = `
             if (String(temp) !== "NaN" && !input.startsWith("0")) {
               input = temp;
             }
-          } catch {
+          } catch (e) {
           }
           try {
             if (/^\\d+n\$/.test(input)) input = BigInt(input.slice(0, -1));
-          } catch {
+          } catch (e) {
           }
         }
         break;
@@ -8791,7 +8791,7 @@ const MODULES = `
       try {
         const str = JSON.stringify(input, void 0, space);
         str === "{}" || (result = str);
-      } catch {
+      } catch (e) {
       }
     }
     return result;
@@ -24638,7 +24638,7 @@ const MODULES = `
               }, 100);
             });
           }
-        } catch {
+        } catch (e) {
         }
       }, false);
     }
@@ -25244,6 +25244,7 @@ const MODULES = `
       super(html_default);
       this.avcheck();
       window.__INITIAL_STATE__ = __INITIAL_STATE__;
+      this.registerGlobalStubs();
       this.locsData();
       this.recommendData();
       this.roomRecommend();
@@ -25255,6 +25256,14 @@ const MODULES = `
       Header.banner();
       user.userStatus.timeLine && this.timeLine();
       this.updateDom();
+    }
+    registerGlobalStubs() {
+      const stub = () => {
+      };
+      if (!window.fsrCb) window.fsrCb = stub;
+      if (!window.firstVideoCardImgLoaded) window.firstVideoCardImgLoaded = stub;
+      if (!window.headerBannerLoaded) window.headerBannerLoaded = stub;
+      if (!window.reportfs) window.reportfs = stub;
     }
     locsData() {
       apiWebshowLocs({ ids: [4694, 29, 31, 34, 40, 42, 44] }).then((d) => {
@@ -25270,9 +25279,16 @@ const MODULES = `
       });
     }
     recommendData() {
+      try {
+        const fallbackData = JSON.parse(recommend_default).list;
+        __INITIAL_STATE__.recommendData = fallbackData;
+      } catch (e) {
+        debug.error("Failed to parse recommendData:", e);
+        __INITIAL_STATE__.recommendData = [];
+      }
       apiIndexTopRcmd().then((d) => {
+        __INITIAL_STATE__.recommendData = d;
         if (uid) {
-          __INITIAL_STATE__.recommendData = d;
           poll(() => document.querySelector(".rec-btn.prev"), () => {
             addElement(
               "span",
@@ -28717,6 +28733,228 @@ const MODULES = `
     return text.replace(regexp, (d) => aTC2SC[d]);
   }
 
+  // src/utils/error.ts
+  init_tampermonkey();
+  var LEVEL_LOGGERS = {
+    ["SILENT" /* SILENT */]: (...data) => debug.debug("[SILENT]", ...data),
+    ["WARN" /* WARN */]: (...data) => debug.warn("[WARN]", ...data),
+    ["ERROR" /* ERROR */]: (...data) => debug.error("[ERROR]", ...data),
+    ["FATAL" /* FATAL */]: (...data) => debug.error("[FATAL]", ...data)
+  };
+  function handleError(error, module2, level = "WARN" /* WARN */, context) {
+    const err2 = error instanceof Error ? error : new Error(String(error));
+    const prefix = context ? \`[\${module2}] \${context}\` : \`[\${module2}]\`;
+    LEVEL_LOGGERS[level](prefix, err2.message || err2);
+    if (level === "FATAL" /* FATAL */) {
+      toast.error("发生严重错误", \`\${prefix}\`, err2)();
+    } else if (level === "ERROR" /* ERROR */) {
+      toast.warning("操作出现异常", \`\${prefix}\`)();
+    }
+  }
+
+  // src/core/player-recovery.ts
+  init_tampermonkey();
+  var DEFAULT_RETRY_CONFIG = {
+    maxRetries: 3,
+    baseDelay: 1e3,
+    stallThreshold: 5e3,
+    crashThreshold: 3,
+    crashWindowMs: 3e4
+  };
+  var PlayerRecovery = class {
+    video = null;
+    boundHandlers = [];
+    retry = {
+      count: 0,
+      maxRetries: DEFAULT_RETRY_CONFIG.maxRetries,
+      baseDelay: DEFAULT_RETRY_CONFIG.baseDelay,
+      lastError: null,
+      lastAttempt: 0,
+      isRetrying: false
+    };
+    errorHistory = [];
+    stallTimer;
+    enabled = true;
+    onCrashCallback;
+    constructor(config) {
+      var _a3, _b3;
+      Object.assign(this.retry, {
+        maxRetries: (_a3 = config == null ? void 0 : config.maxRetries) != null ? _a3 : DEFAULT_RETRY_CONFIG.maxRetries,
+        baseDelay: (_b3 = config == null ? void 0 : config.baseDelay) != null ? _b3 : DEFAULT_RETRY_CONFIG.baseDelay
+      });
+    }
+    watch(video) {
+      this.dispose();
+      if (!video) return;
+      this.video = video;
+      this.bindEvents();
+      debug("PlayerRecovery", "开始监控视频元素");
+    }
+    onCrash(callback) {
+      this.onCrashCallback = callback;
+    }
+    enable() {
+      this.enabled = true;
+    }
+    disable() {
+      this.enabled = false;
+    }
+    bindEvents() {
+      if (!this.video) return;
+      const events2 = [
+        ["error", this.onVideoError.bind(this)],
+        ["stalled", this.onStalled.bind(this)],
+        ["waiting", this.onWaiting.bind(this)],
+        ["playing", this.onPlaying.bind(this)],
+        ["abort", this.onAbort.bind(this)]
+      ];
+      events2.forEach(([event, handler]) => {
+        const bound = handler;
+        this.video.addEventListener(event, bound);
+        this.boundHandlers.push({ event, handler: bound });
+      });
+    }
+    onVideoError(e) {
+      var _a3;
+      if (!this.enabled || !this.video) return;
+      const videoError = this.video.error;
+      const errorCode = (_a3 = videoError == null ? void 0 : videoError.code) != null ? _a3 : 0;
+      const errorMessages = {
+        1: "MEDIA_ERR_ABORTED - 加载被中止",
+        2: "MEDIA_ERR_NETWORK - 网络错误",
+        3: "MEDIA_ERR_DECODE - 解码错误",
+        4: "MEDIA_ERR_SRC_NOT_SUPPORTED - 格式不支持"
+      };
+      const message = errorMessages[errorCode] || \`未知错误 (code=\${errorCode})\`;
+      handleError(
+        new Error(message),
+        "PlayerRecovery",
+        errorCode === 2 ? "WARN" /* WARN */ : "ERROR" /* ERROR */,
+        \`\${"网络错误" /* NETWORK_ERROR */}: \${message}\`
+      );
+      if (errorCode === 2 || errorCode === 3) {
+        this.attemptRetry("网络错误" /* NETWORK_ERROR */);
+      }
+      this.recordError(errorCode === 4 ? "解码错误" /* DECODE_ERROR */ : "网络错误" /* NETWORK_ERROR */);
+    }
+    onStalled(_e) {
+      if (!this.enabled) return;
+      this.stallTimer = window.setTimeout(() => {
+        if (this.video && !this.video.paused && !this.video.ended) {
+          handleError(new Error("视频播放卡顿超过5秒"), "PlayerRecovery", "WARN" /* WARN */, "播放卡顿" /* STALLED */);
+          this.attemptRetry("播放卡顿" /* STALLED */);
+        }
+      }, DEFAULT_RETRY_CONFIG.stallThreshold);
+    }
+    onWaiting(_e) {
+      if (this.stallTimer) clearTimeout(this.stallTimer);
+      this.stallTimer = window.setTimeout(() => {
+        if (this.video && !this.video.paused) {
+          debug.warn("PlayerRecovery", "视频缓冲等待超过5秒");
+        }
+      }, DEFAULT_RETRY_CONFIG.stallThreshold);
+    }
+    onPlaying(_e) {
+      this.resetStall();
+      if (this.retry.isRetrying) {
+        debug("PlayerRecovery", "重连成功，播放恢复正常");
+        this.resetRetry();
+      }
+    }
+    onAbort(_e) {
+      if (!this.enabled) return;
+      handleError(new Error("视频加载被中止"), "PlayerRecovery", "WARN" /* WARN */, "加载中止" /* ABORT */);
+    }
+    resetStall() {
+      if (this.stallTimer) {
+        clearTimeout(this.stallTimer);
+        this.stallTimer = void 0;
+      }
+    }
+    recordError(type) {
+      const now = Date.now();
+      this.errorHistory.push({ time: now, type });
+      this.errorHistory = this.errorHistory.filter((e) => now - e.time < DEFAULT_RETRY_CONFIG.crashWindowMs);
+      if (this.errorHistory.length >= DEFAULT_RETRY_CONFIG.crashThreshold) {
+        this.handleCrash();
+      }
+    }
+    attemptRetry(triggerEvent) {
+      if (this.retry.isRetrying || this.retry.count >= this.retry.maxRetries) {
+        if (this.retry.count >= this.retry.maxRetries) {
+          toast.warning("重连已达最大次数", \`已尝试 \${this.retry.maxRetries} 次，请检查网络或刷新页面\`)();
+        }
+        return;
+      }
+      this.retry.isRetrying = true;
+      this.retry.count++;
+      const delay = this.retry.baseDelay * Math.pow(2, this.retry.count - 1);
+      this.retry.lastAttempt = Date.now();
+      toast.warning(\`检测到 \${triggerEvent}\`, \`\${delay / 1e3}s 后自动重连 (\${this.retry.count}/\${this.retry.maxRetries})\`)();
+      debug("PlayerRecovery", \`将在 \${delay}ms 后尝试第 \${this.retry.count} 次重连\`);
+      setTimeout(() => {
+        if (this.video) {
+          const currentTime = this.video.currentTime;
+          const paused = this.video.paused;
+          this.retry.isRetrying = false;
+          try {
+            this.video.load();
+            if (!paused) {
+              this.video.play().catch((e) => {
+                handleError(e, "PlayerRecovery", "WARN" /* WARN */, "自动播放恢复失败");
+              });
+            }
+            if (currentTime > 0) {
+              this.video.currentTime = currentTime;
+            }
+            this.retry.lastError = null;
+          } catch (e) {
+            this.retry.lastError = e instanceof Error ? e : new Error(String(e));
+            handleError(e, "PlayerRecovery", "ERROR" /* ERROR */, \`重连 #\${this.retry.count} 失败\`);
+          }
+        }
+      }, delay);
+    }
+    resetRetry() {
+      this.retry.count = 0;
+      this.retry.isRetrying = false;
+      this.retry.lastError = null;
+    }
+    handleCrash() {
+      handleError(
+        new Error(\`连续 \${DEFAULT_RETRY_CONFIG.crashThreshold} 次错误，判定为播放器崩溃\`),
+        "PlayerRecovery",
+        "FATAL" /* FATAL */,
+        "播放器崩溃" /* CRASH */
+      );
+      const msg = toast.list(
+        "播放器出现严重错误 >>>",
+        \`> 连续 \${DEFAULT_RETRY_CONFIG.crashThreshold} 次异常\`,
+        "> 正在尝试自动恢复..."
+      );
+      setTimeout(() => {
+        msg.type = "error";
+        msg.delay = 6;
+        this.dispose();
+        if (this.onCrashCallback) {
+          this.onCrashCallback();
+        }
+      }, 2e3);
+    }
+    dispose() {
+      this.resetStall();
+      if (this.video) {
+        this.boundHandlers.forEach(({ event, handler }) => {
+          this.video.removeEventListener(event, handler);
+        });
+        this.boundHandlers = [];
+        this.video = null;
+      }
+      this.resetRetry();
+      this.errorHistory = [];
+    }
+  };
+
   // src/core/player.ts
   var danmakuProtect = [
     // 96048, // 【幸运星组曲】「らき☆すた動画」
@@ -28733,7 +28971,7 @@ const MODULES = `
     384460933
     // 【弹幕祭应援】 緋色月下、狂咲ノ絶-1st Anniversary Remix
   ];
-  var Player = class {
+  var Player = class _Player {
     /** 播放器启动参数修改回调栈 */
     modifyArgumentCallback = [];
     /** 添加播放器启动参数修改命令 */
@@ -28747,6 +28985,8 @@ const MODULES = `
     connectResolve;
     /** 已加载播放器 */
     playLoaded = false;
+    /** 播放器恢复/重连模块 */
+    recovery = new PlayerRecovery();
     constructor() {
       propertyHook.modify(window, "nano", (v) => {
         var _a3;
@@ -28842,7 +29082,8 @@ const MODULES = `
           debug("爆破新版播放器!");
           window.player.disconnect();
           this.nanoPlayer || (this.nanoPlayer = window.player);
-        } catch {
+        } catch (e) {
+          handleError(e, "Player", "SILENT" /* SILENT */, "disconnect 新版播放器失败，可能已无实例");
         }
       }
       this.switchVideo();
@@ -28918,8 +29159,34 @@ const MODULES = `
             isInitialized: { value: () => true }
           });
         }
+        this.startRecovery();
       });
       addCss(\`#bofqi .player,#bilibili-player .player{width: 100%;height: 100%;display: block;}.bilibili-player .bilibili-player-auxiliary-area{z-index: 1;}\`, "nano-fix");
+    }
+    /** 启动播放器恢复监控 */
+    startRecovery() {
+      this.recovery.onCrash(() => {
+        debug("PlayerRecovery", "播放器崩溃，尝试回滚到原生播放器");
+        this.nanoPermit();
+      });
+      const tryWatchVideo = () => {
+        var _a3;
+        const video = (_a3 = document.querySelector("#bilibiliPlayer video")) != null ? _a3 : document.querySelector("#bofqi video");
+        if (video) {
+          this.recovery.watch(video);
+          return true;
+        }
+        return false;
+      };
+      if (!tryWatchVideo()) {
+        poll(() => document.querySelector("#bilibiliPlayer video") || document.querySelector("#bofqi video"), () => {
+          if (tryWatchVideo()) {
+            debug("PlayerRecovery", "成功绑定视频元素监控");
+          }
+        }, 500, 1e4);
+      } else {
+        debug("PlayerRecovery", "立即绑定视频元素监控");
+      }
     }
     /** 不启用旧版播放器允许新版播放器启动 */
     nanoPermit() {
@@ -29068,7 +29335,8 @@ const MODULES = `
                 }
               });
             }
-          } catch {
+          } catch (e) {
+            handleError(e, "Player", "WARN" /* WARN */, "字幕繁简转换失败");
           }
         }, false);
       }
@@ -29119,6 +29387,8 @@ const MODULES = `
     }
     /** 正在更新播放器 */
     updating = false;
+    /** 播放器加载超时时间(ms) */
+    static LOAD_TIMEOUT = 15e3;
     /**
      * 加载播放器
      * @param force 强制更新
@@ -29143,19 +29413,32 @@ const MODULES = `
                 "> 如果多次更新失败，请禁用【重构播放器】功能！"
               );
               let i = 1;
+              const fetchWithTimeout = (promise, label, timeout2) => {
+                const ms = timeout2 != null ? timeout2 : _Player.LOAD_TIMEOUT;
+                return Promise.race([
+                  promise,
+                  new Promise((_, reject) => setTimeout(() => reject(new Error(\`\${label} 加载超时 (\${ms / 1e3}s)\`)), ms))
+                ]);
+              };
               await Promise.all([
-                GM.fetch(cdn.encode("/chrome/player/video.js")).then((d) => d.text()).then((d) => {
-                  data[0] = d;
-                  msg.push(\`> 加载播放器组件：\${i++}/2\`);
-                }).catch((e) => {
-                  msg.push(\`> 获取播放器组件出错！\${i++}/2\`, e);
+                fetchWithTimeout(
+                  GM.fetch(cdn.encode("/chrome/player/video.js")).then((d) => d.text()).then((d) => {
+                    data[0] = d;
+                    msg.push(\`> 加载播放器组件：\${i++}/2\`);
+                  }),
+                  "video.js"
+                ).catch((e) => {
+                  msg.push(\`> 获取 video.js 出错！\${i++}/2\`, e instanceof Error ? e.message : e);
                   msg.type = "error";
                 }),
-                GM.fetch(cdn.encode("/chrome/player/video.css")).then((d) => d.text()).then((d) => {
-                  data[1] = d;
-                  msg.push(\`> 加载播放器组件：\${i++}/2\`);
-                }).catch((e) => {
-                  msg.push(\`> 获取播放器组件出错！\${i++}/2\`, e);
+                fetchWithTimeout(
+                  GM.fetch(cdn.encode("/chrome/player/video.css")).then((d) => d.text()).then((d) => {
+                    data[1] = d;
+                    msg.push(\`> 加载播放器组件：\${i++}/2\`);
+                  }),
+                  "video.css"
+                ).catch((e) => {
+                  msg.push(\`> 获取 video.css 出错！\${i++}/2\`, e instanceof Error ? e.message : e);
                   msg.type = "error";
                 })
               ]);
@@ -29184,7 +29467,8 @@ const MODULES = `
           addCss(".bilibili-player-video-progress-detail-img {transform: scale(0.333333);transform-origin: 0px 0px;}", "detail-img");
         }
       } catch (e) {
-        this.updating || toast.error("播放器加载失败！", "已回滚~", e)();
+        handleError(e, "Player", "ERROR" /* ERROR */, "播放器加载失败");
+        this.updating = false;
         await loadScript(URLS.VIDEO);
         addCss(".bilibili-player-video-progress-detail-img {transform: scale(0.333333);transform-origin: 0px 0px;}", "detail-img");
       }
@@ -37849,7 +38133,7 @@ const MODULES = `
           try {
             const result = typeof res.response === "string" ? jsonCheck(res.response) : res.response;
             this.like.likes = result.result.likes;
-          } catch {
+          } catch (e) {
           }
         });
         switchVideo(() => {
@@ -38011,7 +38295,7 @@ const MODULES = `
         jsonpHook("api.bilibili.com/x/web-interface/elec/show", void 0, (res) => {
           try {
             res.data.av_list = [];
-          } catch {
+          } catch (e) {
           }
           return res;
         }, false);
@@ -38409,7 +38693,7 @@ const MODULES = `
         jsonpHook("api.bilibili.com/x/web-interface/elec/show", void 0, (res) => {
           try {
             res.data.av_list = [];
-          } catch {
+          } catch (e) {
           }
           return res;
         }, false);
@@ -39264,7 +39548,7 @@ const MODULES = `
           key = arr2.shift();
         }
         target[key] = value;
-      } catch {
+      } catch (e) {
       }
     }
   }();
@@ -39802,7 +40086,7 @@ const MODULES = `
       let rect = void 0;
       try {
         rect = node.getBoundingClientRect();
-      } catch {
+      } catch (e) {
       }
       if (!rect || !onwer.documentElement.contains(node)) {
         rect && (result.top = rect.top, result.left = rect.left);
@@ -40963,10 +41247,8 @@ const MODULES = `
   var PageChannel = class extends Page {
     constructor() {
       super(channel_default);
+      this.registerGlobalStubs();
       const name = BLOD.path[4];
-      if (name && location.pathname.includes("/c/")) {
-        urlCleaner.updateLocation(location.href.replace(new RegExp(\`/c/\${name}/?\`), \`/v/\${name}/\`));
-      }
       if (name && channelTitle[name]) {
         document.title = \`\${channelTitle[name]} - 哔哩哔哩 (゜-゜)つロ 干杯~-bilibili\`;
       }
@@ -40974,8 +41256,19 @@ const MODULES = `
       Header.primaryMenu();
       Header.banner();
       this.updateDom();
+      if (name && location.pathname.includes("/c/")) {
+        urlCleaner.updateLocation(location.href.replace(new RegExp(\`/c/\${name}/?\`), \`/v/\${name}/\`));
+      }
       this.sliderData();
       this.checkChannelLoad();
+    }
+    registerGlobalStubs() {
+      const stub = () => {
+      };
+      if (!window.fsrCb) window.fsrCb = stub;
+      if (!window.firstVideoCardImgLoaded) window.firstVideoCardImgLoaded = stub;
+      if (!window.headerBannerLoaded) window.headerBannerLoaded = stub;
+      if (!window.reportfs) window.reportfs = stub;
     }
     /** 设置频道页所需的window全局变量 */
     setChannelWindow() {
@@ -41060,7 +41353,7 @@ const MODULES = `
   // src/index.ts
   try {
     document.domain = "bilibili.com";
-  } catch {
+  } catch (e) {
   }
   var _a2, _b2, _c;
   BLOD.version = (_c = (_b2 = (_a2 = GM.info) == null ? void 0 : _a2.script) == null ? void 0 : _b2.version) == null ? void 0 : _c.slice(-40);
