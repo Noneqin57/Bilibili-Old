@@ -1,6 +1,6 @@
 {
   "name": "@jsc/tampermonkey",
-  "version": "1.0.1",
+  "version": "1.1.2",
   "description": "用于提供tampermonkey脚本兼容运行环境。",
   "main": "index",
   "author": "MatooriKashin",

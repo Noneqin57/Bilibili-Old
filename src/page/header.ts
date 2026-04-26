@@ -11,6 +11,8 @@ import indexIcon from "../json/index-icon.json";
 import cssAvatarAnimation from '../css/avatar-animation.css';
 import cssMessage from '../css/message.css';
 
+import { DynamicBannerRenderer, type BannerConfig } from "../core/banner-render";
+
 export class Header {
     /** locs列表 */
     static locs = [1576, 1612, 1580, 1920, 1584, 1588, 1592, 3129, 1600, 1608, 1604, 1596, 2210, 1634, 142];
@@ -149,8 +151,72 @@ export class Header {
                     }
                 });
             }
+            // 尝试渲染动态 Banner
+            if (header) {
+                this.renderDynamicBanner(header);
+            }
             return loc;
         }, false);
+    }
+    /** 动态 Banner 渲染器实例 */
+    private static dynamicBannerRenderer: DynamicBannerRenderer | null = null;
+    protected static renderDynamicBanner(header: { is_split_layer?: number; split_layer?: string }) {
+        if (!this.dynamicBanner) {
+            return;
+        }
+        if (header.is_split_layer !== 1 || !header.split_layer) {
+            return;
+        }
+
+        try {
+            const splitLayer = JSON.parse(header.split_layer);
+            if (splitLayer?.version !== '1' || !Array.isArray(splitLayer?.layers)) {
+                return;
+            }
+
+            const bannerConfig: BannerConfig = {
+                type: 'multi-layer',
+                multiLayer: {
+                    version: 2,
+                    layers: splitLayer.layers
+                }
+            };
+
+            poll(() => document.querySelector<HTMLElement>('#banner_link'), (bannerEl) => {
+                if (this.dynamicBannerRenderer) {
+                    this.dynamicBannerRenderer.dispose();
+                }
+                this.dynamicBannerRenderer = new DynamicBannerRenderer();
+                this.dynamicBannerRenderer.render(bannerEl, bannerConfig);
+
+                bannerEl.style.backgroundImage = 'none';
+                bannerEl.style.backgroundColor = 'transparent';
+
+                addCss(`
+                    .dynamic-banner-wrapper {
+                        position: absolute;
+                        top: 0; left: 0; width: 100%; height: 100%;
+                    }
+                    .dynamic-banner-wrapper .layer {
+                        position: absolute;
+                        left: 0; top: 0;
+                        height: 100%; width: 100%;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                    }
+                    .dynamic-banner-wrapper .layer img,
+                    .dynamic-banner-wrapper .layer video,
+                    .dynamic-banner-wrapper .layer canvas {
+                        user-select: none;
+                        pointer-events: none;
+                        -webkit-user-drag: none;
+                    }
+                `, 'dynamic-banner-styles');
+            });
+        } catch (e) {
+            console.error('[Header] 解析动态 Banner 数据失败:', e);
+        }
     }
     /** 顶栏广场 */
     protected static plaza() {
@@ -321,6 +387,7 @@ export class Header {
         return header;
     }
     static fullBannerCover = false;
+    static dynamicBanner = false;
     /** 顶栏样式修复 */
     protected static styleFix() {
         addCss(".nav-item.live {width: auto;}.lt-row {display: none !important;} .bili-header-m #banner_link{background-size: cover;background-position: center !important;}", 'lt-row-fix');

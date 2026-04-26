@@ -9282,6 +9282,8 @@ const MODULES = `
     show1080p: false,
     /** 调整顶栏banner样式 */
     fullBannerCover: false,
+    /** 动态Banner */
+    dynamicBanner: true,
     /** 原生播放器新版弹幕 */
     dmproto: true,
     /** 普权弹幕换行 */
@@ -23959,6 +23961,498 @@ const MODULES = `
   // src/css/message.css
   var message_default = "/* 修复消息页样式 */\\r\\n.container[data-v-6969394c] {\\r\\n    height: calc(100vh - 42px) !important;\\r\\n}\\r\\n\\r\\n.container[data-v-1c9150a9] {\\r\\n    height: calc(100vh - 42px) !important;\\r\\n}\\r\\n\\r\\n.im-root,\\r\\n.im-root .im-list-box * {\\r\\n    font-size: 12px;\\r\\n    line-height: 42px;\\r\\n}\\r\\n\\r\\n.im-root .im-list-box {\\r\\n    width: 100%;\\r\\n    overflow: visible;\\r\\n}\\r\\n\\r\\n.im-root .im-list-box .im-list {\\r\\n    line-height: 42px;\\r\\n    height: 42px;\\r\\n}\\r\\n\\r\\n.im-root .im-list-box .im-notify.im-number {\\r\\n    height: 14px;\\r\\n    line-height: 13px;\\r\\n    border-radius: 10px;\\r\\n    padding: 1px 3px;\\r\\n    font-size: 12px;\\r\\n    min-width: 20px;\\r\\n    text-align: center;\\r\\n    color: #fff;\\r\\n}\\r\\n\\r\\n.im-root .im-list-box .im-notify.im-number.im-center {\\r\\n    top: 14px;\\r\\n    left: 80px;\\r\\n}\\r\\n\\r\\n.im-root .im-list-box .im-notify.im-dot {\\r\\n    top: 11px;\\r\\n    right: -10px;\\r\\n    width: 8px;\\r\\n    height: 8px;\\r\\n    border-radius: 100%;\\r\\n}\\r\\n\\r\\n.im-root .im-list-box .im-notify.im-dot.im-center {\\r\\n    top: 16px;\\r\\n    right: 20px;\\r\\n}";
 
+  // src/core/banner-render.ts
+  init_tampermonkey();
+  var NEWTON_ITERATIONS = 4;
+  var NEWTON_MIN_SLOPE = 1e-3;
+  var SUBDIVISION_PRECISION = 1e-7;
+  var SUBDIVISION_MAX_ITERATIONS = 10;
+  var K_SPLINE_TABLE_SIZE = 11;
+  var K_SAMPLE_STEP_SIZE = 1 / (K_SPLINE_TABLE_SIZE - 1);
+  function calcA(a1, a2) {
+    return 1 - 3 * a2 + 3 * a1;
+  }
+  function calcB(a1, a2) {
+    return 3 * a2 - 6 * a1;
+  }
+  function calcC(a1) {
+    return 3 * a1;
+  }
+  function calcBezier(t, a1, a2) {
+    return ((calcA(a1, a2) * t + calcB(a1, a2)) * t + calcC(a1)) * t;
+  }
+  function getSlope(t, a1, a2) {
+    return 3 * calcA(a1, a2) * t * t + 2 * calcB(a1, a2) * t + calcC(a1);
+  }
+  function binarySubdivide(x, a, b, mX1, mX2) {
+    let currentT = a + (b - a) / 2;
+    let currentX = calcBezier(currentT, mX1, mX2) - x;
+    let i = 0;
+    while (Math.abs(currentX) > SUBDIVISION_PRECISION && ++i < SUBDIVISION_MAX_ITERATIONS) {
+      currentX > 0 ? b = currentT : a = currentT;
+      currentT = a + (b - a) / 2;
+      currentX = calcBezier(currentT, mX1, mX2) - x;
+    }
+    return currentT;
+  }
+  function newtonRaphsonIterate(x, guessT, mX1, mX2) {
+    for (let i = 0; i < NEWTON_ITERATIONS; ++i) {
+      const slope = getSlope(guessT, mX1, mX2);
+      if (slope === 0) return guessT;
+      guessT -= (calcBezier(guessT, mX1, mX2) - x) / slope;
+    }
+    return guessT;
+  }
+  function bezier(mX1, mY1, mX2, mY2) {
+    if (!(mX1 >= 0 && mX1 <= 1 && mX2 >= 0 && mX2 <= 1)) {
+      throw new Error("bezier x values must be in [0, 1] range");
+    }
+    if (mX1 === mY1 && mX2 === mY2) return (x) => x;
+    const sampleValues = new Float32Array(K_SPLINE_TABLE_SIZE);
+    for (let i = 0; i < K_SPLINE_TABLE_SIZE; ++i) {
+      sampleValues[i] = calcBezier(i * K_SAMPLE_STEP_SIZE, mX1, mX2);
+    }
+    function getTForX(x) {
+      let intervalStart = 0;
+      let currentSample = 1;
+      const lastSample = K_SPLINE_TABLE_SIZE - 1;
+      for (; currentSample !== lastSample && sampleValues[currentSample] <= x; ++currentSample) {
+        intervalStart += K_SAMPLE_STEP_SIZE;
+      }
+      --currentSample;
+      const dist = (x - sampleValues[currentSample]) / (sampleValues[currentSample + 1] - sampleValues[currentSample]);
+      const guessT = intervalStart + dist * K_SAMPLE_STEP_SIZE;
+      const slope = getSlope(guessT, mX1, mX2);
+      if (slope >= NEWTON_MIN_SLOPE) return newtonRaphsonIterate(x, guessT, mX1, mX2);
+      else if (slope === 0) return guessT;
+      else return binarySubdivide(x, intervalStart, intervalStart + K_SAMPLE_STEP_SIZE, mX1, mX2);
+    }
+    return (x) => {
+      if (x === 0 || x === 1) return x;
+      return calcBezier(getTForX(x), mY1, mY2);
+    };
+  }
+  function makeCurve(curve) {
+    const bezierCurve = bezier(...curve);
+    return (x) => x > 0 ? bezierCurve(x) : -bezierCurve(-x);
+  }
+  var IDENTITY_CURVE = (x) => x;
+  function resolveScalarCurve(prop) {
+    return (prop == null ? void 0 : prop.offsetCurve) ? makeCurve(prop.offsetCurve) : IDENTITY_CURVE;
+  }
+  function applyAlternateOpacity(value) {
+    let foldedOpacity = Math.abs(value % 1);
+    if (Math.abs(value % 2) >= 1) foldedOpacity = 1 - foldedOpacity;
+    return foldedOpacity;
+  }
+  function resolveBlurValue(initial, offset3, curve, normalizedDisplacementX, prop) {
+    const value = initial + offset3 * curve(normalizedDisplacementX);
+    return !prop.wrap || prop.wrap === "clamp" ? Math.max(0, value) : Math.abs(value);
+  }
+  function resolveOpacityValue(initial, offset3, curve, normalizedDisplacementX, prop) {
+    const value = initial + offset3 * curve(normalizedDisplacementX);
+    if (!prop.wrap || prop.wrap === "clamp") return Math.max(0, Math.min(1, value));
+    return applyAlternateOpacity(value);
+  }
+  var VIDEO_DRAW_INTERVAL_MS = 30.3;
+  var DynamicBannerRenderer = class {
+    container = null;
+    layers = [];
+    layerElements = [];
+    resourceElements = [];
+    videoElements = [];
+    canvasContexts = [];
+    layerSnapshots = [];
+    resourceMetrics = [];
+    layerCurves = [];
+    videoDrawTimerId = 0;
+    idmObserver = null;
+    idmScanFrameId = 0;
+    normalizedDisplacementX = 0;
+    pointerAnchorClientX = 0;
+    bannerHeightScale = 1;
+    lastRenderedDisplacementX = NaN;
+    animationFrameId = 0;
+    isPointerActiveInBanner = false;
+    _boundMouseEnter;
+    _boundMouseMove;
+    _boundMouseLeave;
+    _boundResize;
+    _boundBlur;
+    _frameCallback;
+    constructor() {
+      this._boundMouseEnter = this._handleMouseEnter.bind(this);
+      this._boundMouseMove = this._handleMouseMove.bind(this);
+      this._boundMouseLeave = this._handleMouseLeave.bind(this);
+      this._boundResize = this._handleResize.bind(this);
+      this._boundBlur = this._handleBlur.bind(this);
+      this._frameCallback = this._renderFrame.bind(this);
+    }
+    render(container, bannerConfig) {
+      if (!bannerConfig || bannerConfig.type !== "multi-layer" || bannerConfig.multiLayer.version !== 2) {
+        console.warn("[DynamicBannerRenderer] 不支持的 Banner 配置或类型");
+        return;
+      }
+      this.container = container;
+      this.layers = bannerConfig.multiLayer.layers;
+      this.bannerHeightScale = container.clientHeight / 155;
+      this._buildSnapshots();
+      this._buildDOM();
+      this._startIdmSuppression();
+      this.container.addEventListener("mouseenter", this._boundMouseEnter);
+      this.container.addEventListener("mousemove", this._boundMouseMove);
+      this.container.addEventListener("mouseleave", this._boundMouseLeave);
+      window.addEventListener("resize", this._boundResize);
+      window.addEventListener("blur", this._boundBlur);
+    }
+    dispose() {
+      if (this.container) {
+        this.container.removeEventListener("mouseenter", this._boundMouseEnter);
+        this.container.removeEventListener("mousemove", this._boundMouseMove);
+        this.container.removeEventListener("mouseleave", this._boundMouseLeave);
+      }
+      window.removeEventListener("resize", this._boundResize);
+      window.removeEventListener("blur", this._boundBlur);
+      cancelAnimationFrame(this.animationFrameId);
+      if (this.videoDrawTimerId) {
+        window.clearInterval(this.videoDrawTimerId);
+        this.videoDrawTimerId = 0;
+      }
+      this._stopIdmSuppression();
+      this.videoElements.forEach((video) => {
+        if (!video) return;
+        video.pause();
+        video.src = "";
+        video.load();
+      });
+      if (this.container) {
+        const wrapper = this.container.querySelector(".dynamic-banner-wrapper");
+        wrapper == null ? void 0 : wrapper.remove();
+      }
+      this.container = null;
+      this.layers = [];
+      this.layerElements = [];
+      this.resourceElements = [];
+      this.videoElements = [];
+      this.canvasContexts = [];
+      this.layerSnapshots = [];
+      this.resourceMetrics = [];
+      this.layerCurves = [];
+      this.normalizedDisplacementX = 0;
+      this.pointerAnchorClientX = 0;
+      this.bannerHeightScale = 1;
+      this.lastRenderedDisplacementX = NaN;
+      this.animationFrameId = 0;
+      this.isPointerActiveInBanner = false;
+    }
+    _buildSnapshots() {
+      this.layerSnapshots = this.layers.map((layer) => {
+        var _a3, _b3, _c2, _d, _e, _f, _g, _h, _i, _j, _k, _l;
+        return {
+          dynamicScale: 1,
+          initialScale: (_b3 = (_a3 = layer.scale) == null ? void 0 : _a3.initial) != null ? _b3 : 1,
+          rotate: 0,
+          translate: [(_e = (_d = (_c2 = layer.translate) == null ? void 0 : _c2.initial) == null ? void 0 : _d[0]) != null ? _e : 0, (_h = (_g = (_f = layer.translate) == null ? void 0 : _f.initial) == null ? void 0 : _g[1]) != null ? _h : 0],
+          blur: (_j = (_i = layer.blur) == null ? void 0 : _i.initial) != null ? _j : 0,
+          opacity: (_l = (_k = layer.opacity) == null ? void 0 : _k.initial) != null ? _l : 1
+        };
+      });
+      this.resourceMetrics = this.layers.map(() => ({ intrinsicWidth: 0, intrinsicHeight: 0 }));
+      this.layerCurves = this.layers.map((layer) => ({
+        scale: resolveScalarCurve(layer.scale),
+        rotate: resolveScalarCurve(layer.rotate),
+        translate: resolveScalarCurve(layer.translate),
+        blur: resolveScalarCurve(layer.blur),
+        opacity: resolveScalarCurve(layer.opacity)
+      }));
+    }
+    _buildDOM() {
+      var _a3, _b3;
+      if (!this.container) return;
+      const existingLayers = this.container.querySelectorAll(".layer");
+      existingLayers.forEach((l) => l.remove());
+      let wrapper = this.container.querySelector(".dynamic-banner-wrapper");
+      if (!wrapper) {
+        wrapper = document.createElement("div");
+        wrapper.className = "dynamic-banner-wrapper";
+        wrapper.style.cssText = "position: absolute; top: 0; left: 0; width: 100%; height: 100%; overflow: hidden;";
+        this.container.appendChild(wrapper);
+      }
+      this.layerElements = [];
+      this.resourceElements = [];
+      this.videoElements = this.layers.map(() => null);
+      this.canvasContexts = this.layers.map(() => null);
+      const fragment = document.createDocumentFragment();
+      for (let layerIndex = 0; layerIndex < this.layers.length; layerIndex++) {
+        const layer = this.layers[layerIndex];
+        const layerElement = document.createElement("div");
+        layerElement.className = "layer";
+        layerElement.style.cssText = "position: absolute; top: 0; left: 0; width: 100%; height: 100%;";
+        const src = (_b3 = (_a3 = layer.resources[0]) == null ? void 0 : _a3.src) != null ? _b3 : "";
+        const resourceElement = this._createResourceElement(src, layerIndex);
+        layerElement.appendChild(resourceElement);
+        fragment.appendChild(layerElement);
+        this.layerElements.push(layerElement);
+        this.resourceElements.push(resourceElement);
+      }
+      wrapper.appendChild(fragment);
+      this._startVideoDrawLoop();
+      this._scheduleRender(true);
+    }
+    _createResourceElement(src, layerIndex) {
+      if (/\\.(webm|mp4)\$/i.test(src)) {
+        const canvas = document.createElement("canvas");
+        this.canvasContexts[layerIndex] = canvas.getContext("2d");
+        const video = document.createElement("video");
+        video.src = src;
+        video.muted = true;
+        video.loop = true;
+        video.playsInline = true;
+        video.autoplay = true;
+        video.preload = "auto";
+        video.controls = false;
+        video.disablePictureInPicture = true;
+        video.setAttribute("x-webkit-airplay", "deny");
+        video.setAttribute("aria-hidden", "true");
+        const ensurePlay = () => {
+          if (video.paused) {
+            video.play().catch(() => {
+            });
+          }
+        };
+        video.addEventListener("loadeddata", ensurePlay, { once: true });
+        video.addEventListener("canplay", ensurePlay, { once: true });
+        video.addEventListener("play", () => this._drawVideoFrame(layerIndex));
+        video.addEventListener("error", () => {
+          console.warn(\`[DynamicBannerRenderer] 视频加载失败: \${src}\`);
+        });
+        this.videoElements[layerIndex] = video;
+        this._registerVideoMetrics(video, layerIndex, canvas);
+        return canvas;
+      }
+      const img = document.createElement("img");
+      img.src = src;
+      this._registerImageMetrics(img, layerIndex);
+      return img;
+    }
+    _registerImageMetrics(img, layerIndex) {
+      const syncMetrics = () => {
+        this._captureResourceMetrics(layerIndex, img.naturalWidth, img.naturalHeight, img);
+      };
+      if (img.complete && img.naturalWidth > 0 && img.naturalHeight > 0) {
+        syncMetrics();
+        return;
+      }
+      img.addEventListener("load", syncMetrics, { once: true });
+    }
+    _registerVideoMetrics(video, layerIndex, resourceElement) {
+      const syncMetrics = () => {
+        this._captureResourceMetrics(layerIndex, video.videoWidth, video.videoHeight, resourceElement);
+        this._drawVideoFrame(layerIndex);
+      };
+      if (video.readyState >= 1 && video.videoWidth > 0 && video.videoHeight > 0) {
+        syncMetrics();
+        return;
+      }
+      video.addEventListener("loadedmetadata", syncMetrics, { once: true });
+    }
+    _captureResourceMetrics(layerIndex, intrinsicWidth, intrinsicHeight, resourceElement) {
+      if (!this.container || intrinsicWidth <= 0 || intrinsicHeight <= 0) return;
+      this.resourceMetrics[layerIndex] = { intrinsicWidth, intrinsicHeight };
+      this._applyResourceDimensions(layerIndex, resourceElement);
+      this._scheduleRender(true);
+    }
+    _applyResourceDimensions(layerIndex, resourceElement = this.resourceElements[layerIndex]) {
+      const metrics = this.resourceMetrics[layerIndex];
+      const snapshot = this.layerSnapshots[layerIndex];
+      if (!resourceElement || !metrics || !snapshot || metrics.intrinsicWidth <= 0 || metrics.intrinsicHeight <= 0) return;
+      const renderWidth = metrics.intrinsicWidth * this.bannerHeightScale * snapshot.initialScale;
+      const renderHeight = metrics.intrinsicHeight * this.bannerHeightScale * snapshot.initialScale;
+      if (resourceElement instanceof HTMLCanvasElement) {
+        const width = Math.max(1, Math.round(renderWidth));
+        const height = Math.max(1, Math.round(renderHeight));
+        if (resourceElement.width !== width) resourceElement.width = width;
+        if (resourceElement.height !== height) resourceElement.height = height;
+        this._drawVideoFrame(layerIndex);
+      }
+      resourceElement.style.width = \`\${renderWidth}px\`;
+      resourceElement.style.height = \`\${renderHeight}px\`;
+    }
+    _startVideoDrawLoop() {
+      if (this.videoDrawTimerId || !this.videoElements.some(Boolean)) return;
+      this.videoDrawTimerId = window.setInterval(() => this._drawAllVideoFrames(), VIDEO_DRAW_INTERVAL_MS);
+    }
+    _drawAllVideoFrames() {
+      for (let layerIndex = 0; layerIndex < this.videoElements.length; layerIndex++) {
+        this._drawVideoFrame(layerIndex);
+      }
+    }
+    _drawVideoFrame(layerIndex) {
+      const video = this.videoElements[layerIndex];
+      const resourceElement = this.resourceElements[layerIndex];
+      if (!video || !(resourceElement instanceof HTMLCanvasElement) || video.readyState < 2) return;
+      let context = this.canvasContexts[layerIndex];
+      if (!context) {
+        context = resourceElement.getContext("2d");
+        this.canvasContexts[layerIndex] = context;
+      }
+      if (!context) return;
+      const drawWidth = resourceElement.width || video.videoWidth;
+      const drawHeight = resourceElement.height || video.videoHeight;
+      if (drawWidth <= 0 || drawHeight <= 0) return;
+      try {
+        context.clearRect(0, 0, drawWidth, drawHeight);
+        context.drawImage(video, 0, 0, drawWidth, drawHeight);
+      } catch {
+      }
+    }
+    _startIdmSuppression() {
+      if (this.idmObserver || !document.body) return;
+      this._hideIdmPanelsNearBanner();
+      this.idmObserver = new MutationObserver(() => this._scheduleIdmScan());
+      this.idmObserver.observe(document.body, { childList: true, subtree: true });
+    }
+    _stopIdmSuppression() {
+      var _a3;
+      (_a3 = this.idmObserver) == null ? void 0 : _a3.disconnect();
+      this.idmObserver = null;
+      if (this.idmScanFrameId) {
+        cancelAnimationFrame(this.idmScanFrameId);
+        this.idmScanFrameId = 0;
+      }
+    }
+    _scheduleIdmScan() {
+      if (this.idmScanFrameId) return;
+      this.idmScanFrameId = requestAnimationFrame(() => {
+        this.idmScanFrameId = 0;
+        this._hideIdmPanelsNearBanner();
+      });
+    }
+    _hideIdmPanelsNearBanner() {
+      if (!this.container || !document.body) return;
+      const bannerRect = this.container.getBoundingClientRect();
+      if (bannerRect.width <= 0 || bannerRect.height <= 0) return;
+      const candidates = document.body.querySelectorAll(
+        '[id*="idm"],[id*="IDM"],[class*="idm"],[class*="IDM"],[title*="IDM"],[title*="Download this video"],[title*="download this video"],[aria-label*="IDM"],[aria-label*="Download this video"],[aria-label*="download this video"],iframe[src*="idm"],iframe[src*="IDM"],iframe[src*="idman"]'
+      );
+      candidates.forEach((candidate) => {
+        if (!this._looksLikeIdmPanel(candidate)) return;
+        const rect = candidate.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return;
+        const overlapsBanner = rect.right > bannerRect.left && rect.left < bannerRect.right && rect.bottom > bannerRect.top && rect.top < bannerRect.bottom;
+        if (!overlapsBanner) return;
+        candidate.style.setProperty("display", "none", "important");
+        candidate.style.setProperty("visibility", "hidden", "important");
+        candidate.style.setProperty("opacity", "0", "important");
+      });
+    }
+    _looksLikeIdmPanel(candidate) {
+      var _a3, _b3, _c2, _d;
+      if ((_a3 = this.container) == null ? void 0 : _a3.contains(candidate)) return false;
+      const markerSource = \`\${candidate.id} \${candidate.className} \${(_b3 = candidate.getAttribute("aria-label")) != null ? _b3 : ""} \${(_c2 = candidate.title) != null ? _c2 : ""}\`.toLowerCase();
+      if (markerSource.includes("idm")) return true;
+      const text = ((_d = candidate.textContent) != null ? _d : "").trim().toLowerCase();
+      if (!text) return false;
+      return text.includes("download this video") || text.includes("download with idm");
+    }
+    _applyAllResourceDimensions() {
+      for (let layerIndex = 0; layerIndex < this.resourceElements.length; layerIndex++) {
+        this._applyResourceDimensions(layerIndex);
+      }
+    }
+    _scheduleRender(force = false) {
+      cancelAnimationFrame(this.animationFrameId);
+      if (force) this.lastRenderedDisplacementX = NaN;
+      this.animationFrameId = requestAnimationFrame(this._frameCallback);
+    }
+    _renderFrame() {
+      var _a3, _b3, _c2, _d, _e, _f, _g, _h, _i, _j, _k, _l;
+      if (this.lastRenderedDisplacementX === this.normalizedDisplacementX) return;
+      this.lastRenderedDisplacementX = this.normalizedDisplacementX;
+      for (let layerIndex = 0; layerIndex < this.layerElements.length; layerIndex++) {
+        const resourceElement = this.resourceElements[layerIndex];
+        if (!resourceElement) continue;
+        const layer = this.layers[layerIndex];
+        const snapshot = this.layerSnapshots[layerIndex];
+        const curves = this.layerCurves[layerIndex];
+        if (!snapshot || !curves) continue;
+        const normalizedDisplacementX = this.normalizedDisplacementX;
+        const scale = snapshot.dynamicScale + ((_b3 = (_a3 = layer.scale) == null ? void 0 : _a3.offset) != null ? _b3 : 0) * curves.scale(normalizedDisplacementX);
+        const rotate = snapshot.rotate + ((_d = (_c2 = layer.rotate) == null ? void 0 : _c2.offset) != null ? _d : 0) * curves.rotate(normalizedDisplacementX);
+        const translateOffsetX = (_g = (_f = (_e = layer.translate) == null ? void 0 : _e.offset) == null ? void 0 : _f[0]) != null ? _g : 0;
+        const translateOffsetY = (_j = (_i = (_h = layer.translate) == null ? void 0 : _h.offset) == null ? void 0 : _i[1]) != null ? _j : 0;
+        const tx = (snapshot.translate[0] + translateOffsetX * curves.translate(normalizedDisplacementX)) * this.bannerHeightScale * snapshot.initialScale;
+        const ty = (snapshot.translate[1] + translateOffsetY * curves.translate(normalizedDisplacementX)) * this.bannerHeightScale * snapshot.initialScale;
+        resourceElement.style.transform = \`translate(\${tx}px, \${ty}px) rotate(\${rotate}deg) scale(\${scale})\`;
+        if (layer.blur) {
+          const blur = resolveBlurValue(snapshot.blur, (_k = layer.blur.offset) != null ? _k : 0, curves.blur, normalizedDisplacementX, layer.blur);
+          resourceElement.style.filter = blur < 1e-4 ? "" : \`blur(\${blur}px)\`;
+        } else {
+          resourceElement.style.filter = "";
+        }
+        if (layer.opacity) {
+          const opacity = resolveOpacityValue(snapshot.opacity, (_l = layer.opacity.offset) != null ? _l : 0, curves.opacity, normalizedDisplacementX, layer.opacity);
+          resourceElement.style.opacity = String(opacity);
+        } else {
+          resourceElement.style.opacity = "";
+        }
+      }
+    }
+    _handleMouseEnter(e) {
+      this.isPointerActiveInBanner = true;
+      this.pointerAnchorClientX = e.clientX;
+      cancelAnimationFrame(this.animationFrameId);
+    }
+    _handleMouseMove(e) {
+      if (!this.container || this.container.clientWidth <= 0) return;
+      if (!this.isPointerActiveInBanner) {
+        this.isPointerActiveInBanner = true;
+        this.pointerAnchorClientX = e.clientX;
+      }
+      this.normalizedDisplacementX = (e.clientX - this.pointerAnchorClientX) / this.container.clientWidth;
+      this._scheduleRender();
+    }
+    _handleMouseLeave() {
+      this._startResetAnimation();
+    }
+    _handleBlur() {
+      this._startResetAnimation();
+    }
+    _startResetAnimation() {
+      this.isPointerActiveInBanner = false;
+      this.pointerAnchorClientX = 0;
+      cancelAnimationFrame(this.animationFrameId);
+      const startDisplacementX = this.normalizedDisplacementX;
+      if (Math.abs(startDisplacementX) < 1e-4) {
+        this.normalizedDisplacementX = 0;
+        this._scheduleRender(true);
+        return;
+      }
+      const startTime = performance.now();
+      const RESET_ANIMATION_MS = 200;
+      const animate = (now) => {
+        const elapsed = now - startTime;
+        if (elapsed < RESET_ANIMATION_MS) {
+          this.normalizedDisplacementX = startDisplacementX * (1 - elapsed / RESET_ANIMATION_MS);
+          this._renderFrame();
+          this.animationFrameId = requestAnimationFrame(animate);
+        } else {
+          this.normalizedDisplacementX = 0;
+          this.lastRenderedDisplacementX = NaN;
+          this._renderFrame();
+          this.animationFrameId = 0;
+        }
+      };
+      this.animationFrameId = requestAnimationFrame(animate);
+    }
+    _handleResize() {
+      if (!this.container) return;
+      this.bannerHeightScale = this.container.clientHeight / 155;
+      this._applyAllResourceDimensions();
+      this._scheduleRender(true);
+    }
+  };
+
   // src/page/header.ts
   var Header = class _Header {
     /** locs列表 */
@@ -24093,8 +24587,66 @@ const MODULES = `
             }
           });
         }
+        if (header) {
+          this.renderDynamicBanner(header);
+        }
         return loc;
       }, false);
+    }
+    /** 动态 Banner 渲染器实例 */
+    static dynamicBannerRenderer = null;
+    static renderDynamicBanner(header) {
+      if (!this.dynamicBanner) {
+        return;
+      }
+      if (header.is_split_layer !== 1 || !header.split_layer) {
+        return;
+      }
+      try {
+        const splitLayer = JSON.parse(header.split_layer);
+        if ((splitLayer == null ? void 0 : splitLayer.version) !== "1" || !Array.isArray(splitLayer == null ? void 0 : splitLayer.layers)) {
+          return;
+        }
+        const bannerConfig = {
+          type: "multi-layer",
+          multiLayer: {
+            version: 2,
+            layers: splitLayer.layers
+          }
+        };
+        poll(() => document.querySelector("#banner_link"), (bannerEl) => {
+          if (this.dynamicBannerRenderer) {
+            this.dynamicBannerRenderer.dispose();
+          }
+          this.dynamicBannerRenderer = new DynamicBannerRenderer();
+          this.dynamicBannerRenderer.render(bannerEl, bannerConfig);
+          bannerEl.style.backgroundImage = "none";
+          bannerEl.style.backgroundColor = "transparent";
+          addCss(\`
+                    .dynamic-banner-wrapper {
+                        position: absolute;
+                        top: 0; left: 0; width: 100%; height: 100%;
+                    }
+                    .dynamic-banner-wrapper .layer {
+                        position: absolute;
+                        left: 0; top: 0;
+                        height: 100%; width: 100%;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                    }
+                    .dynamic-banner-wrapper .layer img,
+                    .dynamic-banner-wrapper .layer video,
+                    .dynamic-banner-wrapper .layer canvas {
+                        user-select: none;
+                        pointer-events: none;
+                        -webkit-user-drag: none;
+                    }
+                \`, "dynamic-banner-styles");
+        });
+      } catch (e) {
+        console.error("[Header] 解析动态 Banner 数据失败:", e);
+      }
     }
     /** 顶栏广场 */
     static plaza() {
@@ -24238,6 +24790,7 @@ const MODULES = `
       return header;
     }
     static fullBannerCover = false;
+    static dynamicBanner = false;
     /** 顶栏样式修复 */
     static styleFix() {
       addCss(".nav-item.live {width: auto;}.lt-row {display: none !important;} .bili-header-m #banner_link{background-size: cover;background-position: center !important;}", "lt-row-fix");
@@ -37979,6 +38532,7 @@ const MODULES = `
       this.pgc = true;
       location.href.replace(/[sS][sS]\\d+/, (d) => this.ssid = Number(d.substring(2)));
       location.href.replace(/[eE][pP]\\d+/, (d) => this.epid = Number(d.substring(2)));
+      this.followSeason();
       this.recommend();
       this.seasonCount();
       ((_a3 = user.userStatus.videoLimit) == null ? void 0 : _a3.status) && this.videoLimit();
@@ -37990,6 +38544,100 @@ const MODULES = `
       Header.primaryMenu();
       Header.banner();
       this.updateDom();
+    }
+    /** 获取csrf */
+    getCsrf() {
+      const match = document.cookie.match(/bili_jct=([^;]+)/);
+      return match ? match[1] : "";
+    }
+    /** 修复追番按钮 */
+    followSeason() {
+      const originalFetch = window.fetch;
+      const self2 = this;
+      window.fetch = async function(input, init) {
+        var _a3, _b3;
+        const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+        if (url.includes("bangumi.bilibili.com/follow/web_api/season/follow")) {
+          try {
+            let seasonId = "";
+            const urlObj2 = new URL(url, location.origin);
+            seasonId = urlObj2.searchParams.get("season_id") || "";
+            if (!seasonId && (init == null ? void 0 : init.body)) {
+              const bodyStr = init.body.toString();
+              const bodyParams = new URLSearchParams(bodyStr);
+              seasonId = bodyParams.get("season_id") || "";
+            }
+            if (!seasonId) {
+              seasonId = String(((_a3 = window.__INITIAL_STATE__) == null ? void 0 : _a3.ssId) || self2.ssid || "");
+            }
+            const csrf = self2.getCsrf();
+            const newUrl = \`https://api.bilibili.com/pgc/web/follow/add\`;
+            const newInit = {
+              ...init,
+              method: "POST",
+              credentials: "include",
+              headers: {
+                "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
+              },
+              body: new URLSearchParams({
+                season_id: seasonId,
+                csrf
+              }).toString()
+            };
+            return originalFetch.call(this, newUrl, newInit);
+          } catch (e) {
+          }
+        }
+        if (url.includes("bangumi.bilibili.com/follow/web_api/season/unfollow") || url.includes("bangumi.bilibili.com/follow/web_api/season/cancel")) {
+          try {
+            let seasonId = "";
+            const urlObj2 = new URL(url, location.origin);
+            seasonId = urlObj2.searchParams.get("season_id") || "";
+            if (!seasonId && (init == null ? void 0 : init.body)) {
+              const bodyParams = new URLSearchParams(init.body.toString());
+              seasonId = bodyParams.get("season_id") || "";
+            }
+            if (!seasonId) {
+              seasonId = String(((_b3 = window.__INITIAL_STATE__) == null ? void 0 : _b3.ssId) || self2.ssid || "");
+            }
+            const csrf = self2.getCsrf();
+            const newUrl = \`https://api.bilibili.com/pgc/web/follow/del\`;
+            const newInit = {
+              ...init,
+              method: "POST",
+              credentials: "include",
+              headers: {
+                "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
+              },
+              body: new URLSearchParams({
+                season_id: seasonId,
+                csrf
+              }).toString()
+            };
+            return originalFetch.call(this, newUrl, newInit);
+          } catch (e) {
+          }
+        }
+        return originalFetch.call(this, input, init);
+      };
+    }
+    // 同步追番状态到 INITIAL_STATE
+    async syncFollowState() {
+      var _a3, _b3, _c2, _d;
+      try {
+        const seasonId = this.ssid || ((_b3 = (_a3 = window.__INITIAL_STATE__) == null ? void 0 : _a3.mediaInfo) == null ? void 0 : _b3.season_id);
+        if (!seasonId) return;
+        const res = await fetch(
+          \`https://api.bilibili.com/pgc/view/web/season/user/status?season_id=\${seasonId}\`,
+          { credentials: "include" }
+        );
+        const json = await res.json();
+        const follow = (_d = (_c2 = json == null ? void 0 : json.result) == null ? void 0 : _c2.follow) != null ? _d : 0;
+        const t = window.__INITIAL_STATE__;
+        t.userStat.follow = follow;
+        t.seasonFollowed = follow === 1;
+      } catch (e) {
+      }
     }
     /** 修复：末尾番剧推荐 */
     recommend() {
@@ -40800,6 +41448,7 @@ const MODULES = `
         this.switch("commentJumpUrlTitle", "评论超链接标题", "还原为链接或短链接", void 0, void 0, "直接显示链接标题固然方便，但有些时候还是直接显示链接合适。"),
         this.switch("like", "添加点赞功能", "不支持一键三连"),
         this.switch("fullBannerCover", "修正banner分辨率", "顶栏banner完整显示不裁剪", void 0, void 0, "旧版顶栏banner接口已不再更新，脚本使用新版banner接口进行修复，但二者图片分辨率不一致。脚本默认不会去动页面样式以尽可能原汁原味还原旧版页面，导致顶栏banner被裁剪显示不全，启用本项将调整顶栏分辨率以完整显示图片。"),
+        this.switch("dynamicBanner", "动态Banner", "启用动态分层视差Banner", void 0, void 0, "启用动态Banner，渲染支持鼠标视差。关闭则使用静态Banner图片。"),
         this.switch("episodeData", "分集数据", "bangumi", void 0, void 0, "显示bangumi分集播放和弹幕数，原始合计数据移动到鼠标浮动提示中。"),
         this.switch("simpleChinese", "繁 -> 简", "将繁体字幕翻译为简体", void 0, void 0, "识别并替换CC字幕繁体并转化为简体，使用内置的简繁对照表机械翻译。"),
         this.switch("commentPicture", "评论图片", "显示评论中的图片")
@@ -41669,6 +42318,35 @@ const MODULES = `
     }
   }
 
+  // src/page/online.ts
+  init_tampermonkey();
+
+  // src/html/online.html
+  var online_default = '<!DOCTYPE html>\\n<html>\\n<head>\\n  <title>当前在线 - 哔哩哔哩 (゜-゜)つロ 干杯~-bilibili</title>\\n  <meta charset="utf-8">\\n  <meta http-equiv="X-UA-Compatible" content="IE=edge">\\n  <meta name="renderer" content="webkit">\\n  <meta name="description" content="bilibili是国内知名的视频弹幕网站，这里有最及时的动漫新番，最棒的ACG氛围，最有创意的Up主。大家可以在这里找到许多欢乐。">\\n  <meta name="keywords" content="B站,弹幕,字幕,AMV,MAD,MTV,ANIME,动漫,动漫音乐,游戏,游戏解说,ACG,galgame,动画,番组,新番,初音,洛天依,vocaloid">\\n  <meta name="spm_prefix" content="333.155">\\n  <script type="text/javascript">\\n    window.spmReportData = {};\\n    window.reportConfig = { sample: 1, scrollTracker: true, msgObjects: "spmReportData", errorTracker: true };\\n  <\\/script>\\n  <script type="text/javascript" src="https://s1.hdslb.com/bfs/seed/jinkela/short/config/biliconfig.js"><\\/script>\\n  <script type="text/javascript">window.isForceNarrow = true;<\\/script>\\n  <link href="https://s1.hdslb.com/bfs/static/jinkela/online/css/online.0.a1513c351b5a8523705a0ee1793b4f1bcd064865.css" rel="stylesheet">\\n</head>\\n<body>\\n  <div id="biliMainHeader" type="all" style="height:263px"></div>\\n  <div id="online-app"></div>\\n  <script type="text/javascript" src="https://s1.hdslb.com/bfs/static/jinkela/long/js/jquery/jquery1.7.2.min.js"><\\/script>\\n  <script type="text/javascript" src="https://s1.hdslb.com/bfs/seed/log/report/log-reporter.js" crossorigin><\\/script>\\n  <script type="text/javascript" src="https://s1.hdslb.com/bfs/seed/jinkela/header-v2/header.js" defer><\\/script>\\n  <div class="footer bili-footer report-wrap-module"></div>\\n  <script type="text/javascript" charset="utf-8" src="https://s1.hdslb.com/bfs/seed/jinkela/footer-v2/footer.js"><\\/script>\\n  <script type="text/javascript" src="https://s1.hdslb.com/bfs/seed/jinkela/short/auto-append-spmid.js"><\\/script>\\n  <script type="text/javascript" src="https://s1.hdslb.com/bfs/static/jinkela/online/1.online.a1513c351b5a8523705a0ee1793b4f1bcd064865.js"><\\/script>\\n  <script type="text/javascript" src="https://s1.hdslb.com/bfs/static/jinkela/online/online.a1513c351b5a8523705a0ee1793b4f1bcd064865.js"><\\/script>\\n\\n</body>\\n</html>\\n';
+
+  // src/page/online.ts
+  var PageOnline = class extends Page {
+    constructor() {
+      super(online_default);
+      urlCleaner.updateLocation(location.origin + "/online.html");
+      Header.primaryMenu();
+      Header.banner();
+      this.updateDom();
+      this.fixStyle();
+    }
+    fixStyle() {
+      addCss(".online-list .ebox .lazy-img { height: auto !important; }", "online-lazy-img");
+      addCss(".nav-item.profile-info .i-face .face { margin-top: 6px; }", "online-avatar-fix");
+    }
+    loadedCallback() {
+      super.loadedCallback();
+      document.title = "当前在线 - 哔哩哔哩 (゜-゜)つロ 干杯~-bilibili";
+      window.addEventListener("load", () => {
+        history.replaceState(null, "", "online");
+      });
+    }
+  };
+
   // src/index.ts
   try {
     document.domain = "bilibili.com";
@@ -41729,6 +42407,9 @@ const MODULES = `
       if (/\\/html\\/danmubisai.html/.test(location.href) || /\\/html\\/cele.html/.test(location.href)) {
         new PageHttps();
       }
+      if (/\\/online(?:\\.html)?\$/.test(location.pathname)) {
+        new PageOnline();
+      }
       if (status.channel) {
         if (/\\/(anime|guochuang)\\/?\$/.test(location.pathname)) {
           new PageAnime();
@@ -41752,6 +42433,7 @@ const MODULES = `
     status.disableReport && new ReportObserver();
     status.videoLimit.status && videoLimit.enable();
     status.fullBannerCover && (Header.fullBannerCover = true);
+    status.dynamicBanner && (Header.dynamicBanner = true);
     if (status.header) {
       BLOD.path[2] === "t.bilibili.com" ? Header.dynamic() : new Header();
     }

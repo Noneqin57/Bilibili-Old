@@ -36,6 +36,7 @@ import { PageTv } from './page/channel/tv';
 import { PageDocumentary } from './page/channel/documentary';
 import { PageChannel } from './page/channel/channel';
 import { loginExit } from './page/logout';
+import { PageOnline } from './page/online';
 
 try { document.domain = 'bilibili.com'; } catch (e) { /* 跨域 domain 设置在非兼容环境下预期失败 */ }
 
@@ -98,6 +99,9 @@ user.addCallback(status => {
         ) {
             new PageHttps();
         }
+        if (/\/online(?:\.html)?$/.test(location.pathname)) {
+            new PageOnline();
+        }
         if (status.channel) {
             if (/\/(anime|guochuang)\/?$/.test(location.pathname)) {
                 new PageAnime();
@@ -121,6 +125,7 @@ user.addCallback(status => {
     status.disableReport && new ReportObserver();
     status.videoLimit.status && videoLimit.enable();
     status.fullBannerCover && (Header.fullBannerCover = true);
+    status.dynamicBanner && (Header.dynamicBanner = true);
     // 动态页面使用专用的 Header，其他页面使用普通 Header
     if (status.header) {
         BLOD.path[2] === 't.bilibili.com' ? Header.dynamic() : new Header();

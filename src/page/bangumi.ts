@@ -76,6 +76,7 @@ export class PageBangumi extends Page {
         this.pgc = true;
         location.href.replace(/[sS][sS]\d+/, d => this.ssid = <any>Number(d.substring(2)));
         location.href.replace(/[eE][pP]\d+/, d => this.epid = <any>Number(d.substring(2)));
+        this.followSeason();
         this.recommend();
         this.seasonCount();
         user.userStatus!.videoLimit?.status && this.videoLimit();
@@ -87,6 +88,108 @@ export class PageBangumi extends Page {
         Header.primaryMenu();
         Header.banner();
         this.updateDom();
+    }
+
+    /** 获取csrf */
+    protected getCsrf(): string {
+        const match = document.cookie.match(/bili_jct=([^;]+)/);
+        return match ? match[1] : '';
+    }
+
+    /** 修复追番按钮 */
+    protected followSeason() {
+        const originalFetch = window.fetch;
+        const self = this;
+        window.fetch = async function(input: RequestInfo | URL, init?: RequestInit) {
+            const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+
+            // 拦截追番接口
+            if (url.includes('bangumi.bilibili.com/follow/web_api/season/follow')) {
+                try {
+                    let seasonId = '';
+                    const urlObj = new URL(url, location.origin);
+                    seasonId = urlObj.searchParams.get('season_id') || '';
+                    if (!seasonId && init?.body) {
+                        const bodyStr = init.body.toString();
+                        const bodyParams = new URLSearchParams(bodyStr);
+                        seasonId = bodyParams.get('season_id') || '';
+                    }
+                    if (!seasonId) {
+                        seasonId = String((<any>window).__INITIAL_STATE__?.ssId || self.ssid || '');
+                    }
+                    const csrf = self.getCsrf();
+
+                    const newUrl = `https://api.bilibili.com/pgc/web/follow/add`;
+                    const newInit: RequestInit = {
+                        ...init,
+                        method: 'POST',
+                        credentials: 'include',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+                        },
+                        body: new URLSearchParams({
+                            season_id: seasonId,
+                            csrf: csrf
+                        }).toString()
+                    };
+                    return originalFetch.call(this, newUrl, newInit);
+                } catch (e) {}
+            }
+
+            // 拦截取消追番接口
+            if (url.includes('bangumi.bilibili.com/follow/web_api/season/unfollow') ||
+                url.includes('bangumi.bilibili.com/follow/web_api/season/cancel')) {
+                try {
+                    let seasonId = '';
+                    const urlObj = new URL(url, location.origin);
+                    seasonId = urlObj.searchParams.get('season_id') || '';
+                    if (!seasonId && init?.body) {
+                        const bodyParams = new URLSearchParams(init.body.toString());
+                        seasonId = bodyParams.get('season_id') || '';
+                    }
+                    if (!seasonId) {
+                        seasonId = String((<any>window).__INITIAL_STATE__?.ssId || self.ssid || '');
+                    }
+                    const csrf = self.getCsrf();
+
+                    const newUrl = `https://api.bilibili.com/pgc/web/follow/del`;
+                    const newInit: RequestInit = {
+                        ...init,
+                        method: 'POST',
+                        credentials: 'include',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+                        },
+                        body: new URLSearchParams({
+                            season_id: seasonId,
+                            csrf: csrf
+                        }).toString()
+                    };
+                    return originalFetch.call(this, newUrl, newInit);
+                } catch (e) {}
+            }
+
+            return originalFetch.call(this, input, init);
+        };
+    }
+    // 同步追番状态到 INITIAL_STATE
+    protected async syncFollowState() {
+        try {
+            const seasonId =
+                this.ssid ||
+                (<any>window).__INITIAL_STATE__?.mediaInfo?.season_id;
+            if (!seasonId) return;
+            const res = await fetch(
+                `https://api.bilibili.com/pgc/view/web/season/user/status?season_id=${seasonId}`,
+                { credentials: 'include' }
+            );
+            const json = await res.json();
+            const follow = json?.result?.follow ?? 0;
+            const t = (<any>window).__INITIAL_STATE__;
+            t.userStat.follow = follow;
+            t.seasonFollowed = follow === 1;
+        } catch (e) {
+        }
     }
     /** 修复：末尾番剧推荐 */
     protected recommend() {
